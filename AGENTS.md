@@ -36,6 +36,7 @@
 - Não crie tabela, coluna, consulta ou código de erro fora de `decisions.md`. Se faltar, pare e peça ao grupo; somente o grupo atualiza o arquivo.
 - **`decisions.md` é somente leitura para agentes/IA.** Não use `edit`, `write`, `patch` nem comandos de shell para alterá-lo. Se algo faltar ou estiver errado, pare e pergunte ao grupo; a mudança é registrada no commit e no log de IA.
 - Não faça push; o grupo publica. Registre no log de IA o pedido, o erro/omissão do agente e a correção do grupo.
+- **Quem executa a tarefa preenche o `Dono` dela em `atividades.md`.** Ao concluir (ou assumir) uma tarefa, grave o nome de quem fez no campo `- **Dono:**`. Tarefa concluída sem Dono preenchido fica incompleta.
 
 ## Comandos
 

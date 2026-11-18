@@ -1,6 +1,6 @@
 # atividades.md — Plano de execução da A3
 
-**Como usar:** este arquivo desdobra o `decisions.md` em tarefas. O `decisions.md` é a fonte de verdade e é **somente leitura para agentes/IA**: se houver conflito, ele vence. O grupo preenche o **Dono** de cada tarefa; a ordem é por dependência, não por data. O prazo macro é **3/12/2026**.
+**Como usar:** este arquivo desdobra o `decisions.md` em tarefas. O `decisions.md` é a fonte de verdade e é **somente leitura para agentes/IA**: se houver conflito, ele vence. **Ao executar ou assumir uma tarefa, preencha o campo `- **Dono:**` com o nome de quem fez** — tarefa marcada como pronta sem Dono preenchido não conta como entregue. A ordem é por dependência, não por data. O prazo macro é **3/12/2026**.
 
 **Definição de pronto (vale para toda tarefa):**
 - [ ] Artefato versionado no caminho combinado.
@@ -24,7 +24,7 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - [x] `README.md` stub, `AGENTS.md`, `opencode.json` (push negado, shell em `ask`, edição de `decisions.md` negada), `decisions.md`.
 - [x] `config.md` com o que o computador precisa ter instalado para rodar o projeto.
 - **Pronto quando:** `git status` mostra só os arquivos esperados; qualquer agente lê `decisions.md` antes de codar.
-- **Dono:** ______
+- **Dono:** Diogo Fernadnes
 
 ### 0.2 Compose e inicialização
 - [x] Serviço `postgres` com `postgres:17`, volume, porta `${PG_PORT:-5432}`, healthcheck em TCP.
@@ -32,14 +32,14 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - [x] Credenciais de laboratório (`estacionamento` / `estacionamento_pwd`) documentadas como tais.
 - [x] Subida limpa validada pelo grupo (`down -v` + `up -d --wait` sem erro, healthcheck `healthy`).
 - **Pronto quando:** `docker compose down -v && docker compose up -d --wait` sobe sem erro e o healthcheck fica `healthy`.
-- **Dono:** ______
+- **Dono:** Diogo Fernadnes
 
 ### 0.3 Repositório GitHub
 - [x] Criar repositório público e convidar o grupo.
 - [x] Mostrar tema, 3 regras, modelo e stack ao professor; confirmar a data de 3/12 no Anima Hub.
 - [x] Primeiro commit do grupo; todos os integrantes precisam commitar ao longo do projeto.
 - **Pronto quando:** link do repositório existe; professor ciente; todos têm acesso.
-- **Dono:** ______
+- **Dono:** Diogo Fernadnes
 
 ### 0.4 Validar e congelar decisions.md
 - [x] Revisar escopo, regras, modelo, procedures/triggers, consultas, seed, app/testes e estrutura.
@@ -47,7 +47,7 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - [x] Congelar para agentes/IA; grupo só altera com justificativa no commit/log.
 - [x] Negar edição no `opencode.json` e registrar a regra no `AGENTS.md`.
 - **Pronto quando:** `decisions.md` está validado, sem ambiguidade bloqueante, e agentes não conseguem editá-lo pelo fluxo normal.
-- **Dono:** ______
+- **Dono:** Diogo Fernadnes
 
 ## Frente A — Modelagem e DDL (12 pts)
 
