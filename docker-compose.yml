@@ -1,0 +1,28 @@
+# Estacionamento Rotativo Central — A3 Banco de Dados
+# PostgreSQL 17 para laboratório. O init roda uma única vez, na primeira
+# subida do volume; use `docker compose down -v` para repetir do zero.
+name: estacionamento
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: estacionamento
+      POSTGRES_PASSWORD: estacionamento_pwd
+      POSTGRES_DB: estacionamento
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pg_dados:/var/lib/postgresql/data
+      - ./postgresql:/scripts/postgresql:ro
+      - ./procedures:/scripts/procedures:ro
+      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U estacionamento -d estacionamento"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  pg_dados:

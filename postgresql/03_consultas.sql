@@ -1,0 +1,5 @@
+-- =====================================================================
+-- PLACEHOLDER — Frente B (consultas Q01..Q10).
+-- Este arquivo não é executado pelo init; é lido pelo psql e pelos testes.
+-- Cada consulta deve ter o marcador `-- @Qnn` e terminar com `;`.
+-- =====================================================================
