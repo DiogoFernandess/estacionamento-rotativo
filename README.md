@@ -47,11 +47,11 @@ docker compose down -v
 
 São credenciais de laboratório, não de produção.
 
-## DER e decisões de modelagem
+## DER e Decisões de Modelagem
 
 ![DER do Estacionamento Rotativo Central](der/estacionamento.png)
 
-Arquivo-fonte: [`der/estacionamento.puml`](der/estacionamento.puml). 7 tabelas, N:M `veiculo` ↔ `vaga` resolvida por `permanencia`.
+Arquivo-fonte: [`der/estacionamento.puml`](der/estacionamento.puml).
 
 ### Cardinalidades (mín., máx.)
 
@@ -69,6 +69,8 @@ Arquivo-fonte: [`der/estacionamento.puml`](der/estacionamento.puml). 7 tabelas, 
 `veiculo` ↔ `vaga` é **N:M** resolvida por `permanencia` — a associativa carrega `entrada`, `saida`, `valor` e `status` (entidade **com estado**).
 
 ### Decisões de modelagem
+
+| Decisão | Por quê |
 |---|---|
 | **`PERMANENCIA` é entidade, não atributo** | Ela carrega estado próprio (`entrada`, `saida`, `valor`, `status`, `ticket_perdido`) e é a associativa **com estado** da N:M. Uma vaga pode ter muitas permanências no tempo e um veículo também; nenhum dos dois "guarda" a outra. |
 | **Ocupação é derivada (sem status em `VAGA`)** | Status armazenado em `VAGA` fica desatualizado e permite duas fontes de verdade. A ocupação atual é `COUNT` de permanências `ABERTA` por vaga — Q01. |
