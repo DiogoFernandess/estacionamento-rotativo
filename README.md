@@ -47,6 +47,25 @@ docker compose down -v
 
 São credenciais de laboratório, não de produção.
 
+## Regras de negócio
+
+Regras fechadas no [`decisions.md`](decisions.md) §2 — este bloco é uma cópia para leitura; em caso de divergência, o `decisions.md` vence.
+
+| ID | Regra |
+|---|---|
+| RN-01 | Entrada só com vaga ativa livre do tipo do veículo. |
+| RN-02 | Permanência ≤ 15 min é gratuita; 15:01 já cobra. |
+| RN-03 | Carro: 1ª hora R$ 12; cada fração iniciada de 30 min após a 1ª hora R$ 4; teto R$ 45. |
+| RN-04 | Moto: 1ª hora R$ 8; fração R$ 3; teto R$ 30. |
+| RN-05 | Ticket perdido: R$ 60 (carro) / R$ 40 (moto), sobrepondo a tarifa por tempo. |
+| RN-06 | Veículo só ocupa vaga do mesmo tipo; vaga inativa não recebe. |
+| RN-07 | No máximo 1 permanência aberta por veículo e nenhuma sobreposição de permanências na mesma vaga. |
+| RN-08 | Saída só fecha com valor 0 ou com pagamento integral; permanência fechada não reabre e o valor não muda. |
+| RN-09 | Formas de pagamento: `DINHEIRO`, `PIX`, `CARTAO`. Valor 0 não gera linha em `PAGAMENTO`. |
+| RN-10 | Operação 24h; o teto é por permanência. |
+
+Onde cada regra é imposta: RN-01, RN-06 e RN-07 pela procedure `registrar_entrada` e pelos triggers; RN-02 a RN-05, RN-08 e RN-09 pela `registrar_saida`; RN-10 pelo cálculo de tempo (Frentes C e B).
+
 ## Estrutura
 
 ```text
