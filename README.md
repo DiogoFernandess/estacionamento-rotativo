@@ -13,7 +13,7 @@ Sistema de banco de dados para um estacionamento rotativo fictício com **100 va
 - Estrutura de diretórios, `.gitignore`, `AGENTS.md`, `opencode.json` e `docker-compose.yml` criados.
 - `decisions.md` validado e congelado para agentes/IA; o grupo só altera com justificativa registrada.
 - `docker/postgres-init.sh` executa os scripts na primeira subida do volume.
-- **Os arquivos SQL em `postgresql/` e `procedures/` são placeholders** até as Frentes A/B/C. A subida atual cria o banco vazio, sem o esquema final.
+- **`postgresql/01_ddl.sql` já contém as 7 tabelas e constraints (A2).** `02_inserts`, `03_consultas`, `04_indices` e `procedures/` ainda são placeholders; a subida cria o esquema, mas ainda sem dados, consultas, índices de performance nem procedures.
 - Subida limpa do compose validada pelo grupo (`down -v` + `up -d --wait` sem erro, healthcheck `healthy`).
 - Serviços `testes` e `app` entram na Frente C.
 
