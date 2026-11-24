@@ -92,11 +92,12 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### A5. Testes de DDL/constraints (JUnit)
-- [ ] 4 testes: constraints nomeadas; placa inválida barrada; `saida <= entrada` barrada; pagamento duplicado barrado.
-- [ ] Cada teste em transação com rollback; usar savepoint quando o erro abortar a transação.
+- [x] 4 testes: constraints nomeadas; placa inválida barrada; `saida <= entrada` barrada; pagamento duplicado barrado.
+- [x] Cada teste em transação com rollback; usar savepoint quando o erro abortar a transação.
 - **Pronto quando:** os 4 passam em `docker compose run --rm testes`.
+- **Saída real:** `docker compose down -v` + `up -d --wait` (`UP_EXIT=0`) + `run --rm testes` (`TESTES_EXIT=0`): `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` e `BUILD SUCCESS`. Dono preenchido; detalhes no README.
 - **Depende de:** A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### A6. README — modelagem
 - [ ] Resumo do domínio e problema; DER; decisões de modelagem justificadas; normalização.
