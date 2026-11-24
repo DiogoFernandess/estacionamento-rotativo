@@ -83,12 +83,13 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### A4. Subida limpa
-- [ ] Rodar `docker compose down -v` e `docker compose up -d --wait`.
-- [ ] Conferir tabelas, contagens e alguns `SELECT`s no `psql`.
-- [ ] Confirmar que erro em qualquer script aborta a inicialização.
+- [x] Rodar `docker compose down -v` e `docker compose up -d --wait`.
+- [x] Conferir tabelas, contagens e alguns `SELECT`s no `psql`.
+- [x] Confirmar que erro em qualquer script aborta a inicialização.
 - **Pronto quando:** a subida do zero funciona sem passo manual e o banco fica pronto.
+- **Saída real:** `EXIT_COPOSE=0`, container `Up (healthy)` e `[init] concluído.`; 7 tabelas, 7 `pk_`/5 `uk_`/8 `fk_`/15 `ck_` (0 fora do padrão), 8 FKs `RESTRICT`, índice parcial presente; erro injetado no primeiro e no último script gerou `EXIT_COPOSE=1`, `Exited (3)` e nenhum `[init] concluído.`. Detalhes no README.
 - **Depende de:** A2, A3
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### A5. Testes de DDL/constraints (JUnit)
 - [ ] 4 testes: constraints nomeadas; placa inválida barrada; `saida <= entrada` barrada; pagamento duplicado barrado.
