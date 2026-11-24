@@ -72,14 +72,15 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### A3. Dados de exemplo com fronteiras
-- [ ] `02_inserts.sql` com 2 tipos, 120 vagas (`C001`–`C100`, `M001`–`M020`), tarifas de carro e moto.
-- [ ] Permanências fechadas com 15:00/15:01, 60:00/60:01, 90:00/90:01, 5h00:00/5h00:01; uma com ticket perdido.
-- [ ] 10 carros + 4 motos com permanência aberta; uma permanência aberta há 10h para o demo do app.
-- [ ] Empate no top 10, vagas nunca usadas (`C100`, `M020`), pagamentos nas 3 formas e em 2 meses.
-- [ ] Datas relativas a `CURRENT_DATE`/`CURRENT_TIMESTAMP`; placas fictícias; nenhum dado pessoal real.
+- [x] `02_inserts.sql` com 2 tipos, 120 vagas (`C001`–`C100`, `M001`–`M020`), tarifas de carro e moto.
+- [x] Permanências fechadas com 15:00/15:01, 60:00/60:01, 90:00/90:01, 5h00:00/5h00:01; uma com ticket perdido.
+- [x] 10 carros + 4 motos com permanência aberta; uma permanência aberta há 10h para o demo do app.
+- [x] Empate no top 10, vagas nunca usadas (`C100`, `M020`), pagamentos nas 3 formas e em 2 meses.
+- [x] Datas relativas a `CURRENT_DATE`/`CURRENT_TIMESTAMP`; placas fictícias; nenhum dado pessoal real.
 - **Pronto quando:** seed roda após o DDL; os valores fechados batem com a tarifa; contagens conhecidas.
+- **Saída real:** `down -v` + `up -d --wait` sem erro; 2 tipos, 2 tarifas, 120 vagas, 31 veículos, 31 permanências (14 ABERTA / 17 FECHADA) e 15 pagamentos; 0 divergências entre valor semeado e valor calculado pela tarifa; 0 pagamentos divergentes; Q01 = 10/100 carros e 4/20 motos; 3 formas e 2 meses. Detalhes no README.
 - **Depende de:** A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### A4. Subida limpa
 - [ ] Rodar `docker compose down -v` e `docker compose up -d --wait`.

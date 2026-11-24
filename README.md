@@ -66,6 +66,37 @@ Regras fechadas no [`decisions.md`](decisions.md) §2 — este bloco é uma cóp
 
 Onde cada regra é imposta: RN-01, RN-06 e RN-07 pela procedure `registrar_entrada` e pelos triggers; RN-02 a RN-05, RN-08 e RN-09 pela `registrar_saida`; RN-10 pelo cálculo de tempo (Frentes C e B).
 
+## Dados de exemplo (A3)
+
+Seed em [`postgresql/02_inserts.sql`](postgresql/02_inserts.sql), executado pelo init logo após o DDL. Contagens impressas na subida limpa (`docker compose down -v && docker compose up -d --wait`, init sem erro):
+
+| Tabela / recorte | Linhas |
+|---|---:|
+| `tipo_veiculo` | 2 |
+| `tarifa` | 2 |
+| `vaga` | 120 |
+| `veiculo` | 31 |
+| `permanencia` | 31 |
+| `permanencia` ABERTA | 14 |
+| `permanencia` FECHADA | 17 |
+| `pagamento` | 15 |
+
+Fronteiras cobradas (duração exata calculada no banco, valor gravado no seed):
+
+| Duração | Carro | Moto |
+|---|---:|---:|
+| 15:00 | R$ 0,00 (tolerância) | R$ 0,00 (tolerância) |
+| 15:01 | R$ 12,00 | R$ 8,00 |
+| 60:00 | R$ 12,00 | R$ 8,00 |
+| 60:01 | R$ 16,00 | R$ 11,00 |
+| 90:00 | R$ 16,00 | R$ 11,00 |
+| 90:01 | R$ 20,00 | R$ 14,00 |
+| 5h00:00 | R$ 44,00 | R$ 30,00 (teto) |
+| 5h00:01 | R$ 45,00 (teto) | — |
+| ticket perdido (45:00) | R$ 60,00 | R$ 40,00 |
+
+Verificação no PostgreSQL 17: **0** divergências entre o valor semeado e o valor recalculado pela tarifa congelada nas 17 permanências fechadas; **0** pagamentos com valor diferente da permanência ou gerados para valor 0; **0** permanências com tipo de veículo diferente do tipo da vaga, **0** sobreposições na mesma vaga e **0** veículos com duas permanências abertas. Q01 devolve CARRO 100/10 ocupadas e MOTO 20/4 ocupadas. Q03 tem empate na posição 10 (duas placas com R$ 12,00), por isso `RANK()` devolve 11 linhas com `posicao <= 10`. `C100` e `M020` aparecem como vagas nunca utilizadas. Pagamentos: `DINHEIRO` 5 / R$ 110,00, `PIX` 6 / R$ 136,00, `CARTAO` 4 / R$ 101,00, em dois meses (outubro R$ 115,00 e novembro R$ 232,00 na subida de 24/11/2026). As datas são relativas a `CURRENT_DATE`/`CURRENT_TIMESTAMP`, portanto os totais por mês acompanham a data da subida.
+
 ## DER e Decisões de Modelagem
 
 ![DER do Estacionamento Rotativo Central](der/estacionamento.png)
