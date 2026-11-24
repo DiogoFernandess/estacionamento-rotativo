@@ -13,7 +13,7 @@ Sistema de banco de dados para um estacionamento rotativo fictício com **100 va
 - Estrutura de diretórios, `.gitignore`, `AGENTS.md`, `opencode.json` e `docker-compose.yml` criados.
 - `decisions.md` validado e congelado para agentes/IA; o grupo só altera com justificativa registrada.
 - `docker/postgres-init.sh` executa os scripts na primeira subida do volume.
-- **`postgresql/01_ddl.sql` já contém as 7 tabelas e constraints (A2).** `02_inserts`, `03_consultas`, `04_indices` e `procedures/` ainda são placeholders; a subida cria o esquema, mas ainda sem dados, consultas, índices de performance nem procedures.
+- **`postgresql/01_ddl.sql` já contém as 7 tabelas e constraints (A2) e `postgresql/02_inserts.sql` já contém o seed com as fronteiras (A3).** `03_consultas`, `04_indices` e `procedures/` ainda são placeholders.
 - Subida limpa do compose validada pelo grupo (`down -v` + `up -d --wait` sem erro, healthcheck `healthy`).
 - Serviços `testes` e `app` entram na Frente C.
 
@@ -46,6 +46,56 @@ docker compose down -v
 - Porta: `${PG_PORT:-5432}` (use `PG_PORT=5433` se a 5432 estiver ocupada)
 
 São credenciais de laboratório, não de produção.
+
+## Regras de negócio
+
+Regras fechadas no [`decisions.md`](decisions.md) §2 — este bloco é uma cópia para leitura; em caso de divergência, o `decisions.md` vence.
+
+| ID | Regra |
+|---|---|
+| RN-01 | Entrada só com vaga ativa livre do tipo do veículo. |
+| RN-02 | Permanência ≤ 15 min é gratuita; 15:01 já cobra. |
+| RN-03 | Carro: 1ª hora R$ 12; cada fração iniciada de 30 min após a 1ª hora R$ 4; teto R$ 45. |
+| RN-04 | Moto: 1ª hora R$ 8; fração R$ 3; teto R$ 30. |
+| RN-05 | Ticket perdido: R$ 60 (carro) / R$ 40 (moto), sobrepondo a tarifa por tempo. |
+| RN-06 | Veículo só ocupa vaga do mesmo tipo; vaga inativa não recebe. |
+| RN-07 | No máximo 1 permanência aberta por veículo e nenhuma sobreposição de permanências na mesma vaga. |
+| RN-08 | Saída só fecha com valor 0 ou com pagamento integral; permanência fechada não reabre e o valor não muda. |
+| RN-09 | Formas de pagamento: `DINHEIRO`, `PIX`, `CARTAO`. Valor 0 não gera linha em `PAGAMENTO`. |
+| RN-10 | Operação 24h; o teto é por permanência. |
+
+Onde cada regra é imposta: RN-01, RN-06 e RN-07 pela procedure `registrar_entrada` e pelos triggers; RN-02 a RN-05, RN-08 e RN-09 pela `registrar_saida`; RN-10 pelo cálculo de tempo (Frentes C e B).
+
+## Dados de exemplo (A3)
+
+Seed em [`postgresql/02_inserts.sql`](postgresql/02_inserts.sql), executado pelo init logo após o DDL. Contagens impressas na subida limpa (`docker compose down -v && docker compose up -d --wait`, init sem erro):
+
+| Tabela / recorte | Linhas |
+|---|---:|
+| `tipo_veiculo` | 2 |
+| `tarifa` | 2 |
+| `vaga` | 120 |
+| `veiculo` | 31 |
+| `permanencia` | 31 |
+| `permanencia` ABERTA | 14 |
+| `permanencia` FECHADA | 17 |
+| `pagamento` | 15 |
+
+Fronteiras cobradas (duração exata calculada no banco, valor gravado no seed):
+
+| Duração | Carro | Moto |
+|---|---:|---:|
+| 15:00 | R$ 0,00 (tolerância) | R$ 0,00 (tolerância) |
+| 15:01 | R$ 12,00 | R$ 8,00 |
+| 60:00 | R$ 12,00 | R$ 8,00 |
+| 60:01 | R$ 16,00 | R$ 11,00 |
+| 90:00 | R$ 16,00 | R$ 11,00 |
+| 90:01 | R$ 20,00 | R$ 14,00 |
+| 5h00:00 | R$ 44,00 | R$ 30,00 (teto) |
+| 5h00:01 | R$ 45,00 (teto) | — |
+| ticket perdido (45:00) | R$ 60,00 | R$ 40,00 |
+
+Verificação no PostgreSQL 17: **0** divergências entre o valor semeado e o valor recalculado pela tarifa congelada nas 17 permanências fechadas; **0** pagamentos com valor diferente da permanência ou gerados para valor 0; **0** permanências com tipo de veículo diferente do tipo da vaga, **0** sobreposições na mesma vaga e **0** veículos com duas permanências abertas. Q01 devolve CARRO 100/10 ocupadas e MOTO 20/4 ocupadas. Q03 tem empate na posição 10 (duas placas com R$ 12,00), por isso `RANK()` devolve 11 linhas com `posicao <= 10`. `C100` e `M020` aparecem como vagas nunca utilizadas. Pagamentos: `DINHEIRO` 5 / R$ 110,00, `PIX` 6 / R$ 136,00, `CARTAO` 4 / R$ 101,00, em dois meses (outubro R$ 115,00 e novembro R$ 232,00 na subida de 24/11/2026). As datas são relativas a `CURRENT_DATE`/`CURRENT_TIMESTAMP`, portanto os totais por mês acompanham a data da subida.
 
 ## DER e Decisões de Modelagem
 
