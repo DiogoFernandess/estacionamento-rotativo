@@ -13,7 +13,7 @@ Sistema de banco de dados para um estacionamento rotativo fictício com **100 va
 - **Frente A concluída:** DER, DDL, seed com fronteiras, subida limpa, 4 testes JUnit de constraints e documentação de modelagem.
 - `decisions.md` validado e congelado para agentes/IA; o grupo só altera com justificativa registrada.
 - `docker/postgres-init.sh` executa os scripts na primeira subida do volume.
-- `03_consultas`, `04_indices` e `procedures/` ainda são placeholders; as consultas e procedures entram nas Frentes B e C.
+- `postgresql/03_consultas.sql` já contém Q01–Q10; `04_indices` e `procedures/` ainda são placeholders (Frentes B e C).
 - Subida limpa do compose validada (`down -v` + `up -d --wait` sem erro, healthcheck `healthy`) e suíte JUnit com 4/4 testes passando.
 - Serviço `testes` já disponível; serviço `app` entra na Frente C.
 
@@ -192,6 +192,29 @@ Redundâncias mantidas de propósito, todas com justificativa no modelo:
 | `permanencia.status` + `saida` | `status` é estado explícito, usado pelo índice único parcial e pelas consultas; o CHECK `ck_permanencia_status_saida` impede que os dois discordem (`ABERTA` ⇔ `saida IS NULL`). |
 | `auditoria_permanencia.status_antes/depois` e `valor_antes/depois` | É log temporal: guarda o que era e o que passou a ser no evento, não uma cópia substituível da linha atual. |
 | `pagamento.permanencia_id` com FK + UK | É a cardinalidade 0..1: no máximo um pagamento por permanência; valor 0 não gera pagamento (RN-09). |
+
+Não há campos de cliente, mensalidade, reserva ou status em `vaga` porque estão fora do escopo fechado em `decisions.md` §1–§3.
+
+## Consultas Q01–Q10 (B1)
+
+Arquivo: [`postgresql/03_consultas.sql`](postgresql/03_consultas.sql), com um marcador `-- @Qnn` por consulta. Execução real: `docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U estacionamento -d estacionamento -f /scripts/postgresql/03_consultas.sql` → `PSQL_EXIT=0`, 10 consultas, sem erro. Técnicas exigidas presentes: 6 consultas com JOIN, 4 funções de janela (`SUM() OVER`, `RANK() OVER`, `SUM(SUM()) OVER ()`, `LAG() OVER`), agregações em todas, `NOT EXISTS` em Q07 e `GROUP BY ROLLUP` em Q10.
+
+Resultados reais da subida com dados semeados em 24/11/2026 e consultas executadas em 25/11/2026 (datas relativas mudam com o dia da subida):
+
+| Consulta | Resultado real |
+|---|---|
+| Q01 | CARRO: total 100, ocupadas 10, livres 90, 10,00%. MOTO: total 20, ocupadas 4, livres 16, 20,00%. |
+| Q02 | 5 dias com pagamento: 19/11 R$ 25,00 (acum. 25,00); 20/11 R$ 36,00 (61,00); 21/11 R$ 47,00 (108,00); 22/11 R$ 20,00 (128,00); 23/11 R$ 104,00 (232,00). |
+| Q03 | 11 linhas (empate na posição 10): 1 ABC9E01 60,00; 2 ABC8D90 45,00; 3 ABC7D89 44,00; 4 MOT8H90 40,00; 5 MOT7G89 30,00; 6 ABC6D78 20,00; 7 ABC4D56 16,00; 7 ABC5D67 16,00; 9 MOT6F78 14,00; 10 ABC2D34 12,00; 10 ABC3D45 12,00. |
+| Q04 | CARRO: média 108,34 min, mínimo 15,00, máximo 300,02. MOTO: média 84,38 min, mínimo 15,00, máximo 300,00. |
+| Q05 | 16 horas com movimento (6–22); soma de entradas = 31 (todas as permanências) e de saídas = 17 (fechadas). |
+| Q06 | `CARTAO` R$ 101,00 (29,11%); `DINHEIRO` R$ 110,00 (31,70%); `PIX` R$ 136,00 (39,19%). Total R$ 347,00. |
+| Q07 | 89 vagas nunca utilizadas: `C020`–`C100` (81 carros) e `M013`–`M020` (8 motos), incluindo as fronteiras `C100` e `M020`. |
+| Q08 | `COBRADO` 13 / R$ 247,00; `TICKET_PERDIDO` 2 / R$ 100,00; `TOLERANCIA` 2 / R$ 0,00. |
+| Q09 | 2026-10: R$ 115,00, anterior `NULL`, variação `NULL`. 2026-11: R$ 232,00, anterior R$ 115,00, variação 101,74%. |
+| Q10 | CARRO: CARTAO 60,00 / DINHEIRO 88,00 / PIX 77,00 / subtotal 225,00. MOTO: CARTAO 41,00 / DINHEIRO 22,00 / PIX 59,00 / subtotal 122,00. Total geral 347,00. |
+
+Conferência de consistência: as receitas de Q02 (232,00 no mês corrente), Q06 (347,00 no total) e Q10 (347,00) batem com a soma dos pagamentos; Q08 (13 + 2 + 2) cobre as 17 permanências fechadas.
 
 ## Estrutura
 

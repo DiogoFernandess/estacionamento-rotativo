@@ -109,12 +109,13 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 ## Frente B — Consultas e desempenho (14 pts)
 
 ### B1. As 10 consultas
-- [ ] Implementar Q01–Q10 exatamente conforme `decisions.md`, cada uma com `-- @Qnn` e `;`.
-- [ ] Garantir 2+ JOIN, 2+ window, 2+ agregação, 1 anti-join e 1 ROLLUP.
-- [ ] Rodar cada consulta e colar o resultado real.
+- [x] Implementar Q01-Q10 exatamente conforme `decisions.md`, cada uma com `-- @Qnn` e `;`.
+- [x] Garantir 2+ JOIN, 2+ window, 2+ agregação, 1 anti-join e 1 ROLLUP.
+- [x] Rodar cada consulta e colar o resultado real.
 - **Pronto quando:** `03_consultas.sql` executa inteiro no banco e devolve os resultados esperados.
+- **Saída real:** `psql -f 03_consultas.sql` com `ON_ERROR_STOP=1` → `PSQL_EXIT=0`, 10 consultas sem erro. Q01 = 10/100 e 4/20; Q02 = 5 dias e acumulado 232,00; Q03 = 11 linhas (empate); Q05 = 31 entradas e 17 saídas; Q06/Q10 = 347,00; Q07 = 89 vagas (C020–C100, M013–M020); Q08 = 13/2/2; Q09 = 115,00 → 232,00 (101,74%). Resultados completos no README.
 - **Depende de:** A3
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B2. Resultados esperados
 - [ ] Calcular à mão os resultados das 10 consultas a partir do seed.
