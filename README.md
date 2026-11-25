@@ -24,6 +24,7 @@ Pré-requisito: Docker com Compose.
 ```bash
 docker compose down -v      # apaga o volume e força a reinicialização
 docker compose up -d --wait # sobe o PostgreSQL e roda o init
+docker compose run --rm testes # suíte JUnit (Frente A em diante)
 ```
 
 Conferir o banco:
@@ -112,6 +113,21 @@ Verificação no PostgreSQL 17: **0** divergências entre o valor semeado e o va
 Conferência no `psql` (`PostgreSQL 17.12`): **7** tabelas no schema `public`; **7** constraints `pk_`, **5** `uk_`, **8** `fk_` e **15** `ck_`, nenhuma fora do padrão de nome; as 8 FKs têm `confdeltype = r` (`ON DELETE RESTRICT`); índice `uk_permanencia_veiculo_aberta` definido como `CREATE UNIQUE INDEX ... ON public.permanencia USING btree (veiculo_id) WHERE ((status)::text = 'ABERTA'::text)`. Contagens: `tipo_veiculo=2`, `vaga=120`, `veiculo=31`, `tarifa=2`, `permanencia=31`, `pagamento=15`, `auditoria_permanencia=0`. `SELECT`s de conferência mostraram as tarifas (carro 15/12/30/4/45/60 e moto 15/8/30/3/30/40), as permanências `C001` (R$ 0,00), `C002` (R$ 12,00), `C009` (ticket perdido, R$ 60,00), `C010` (ABERTA, entrada há 10 horas) e `M008` (ticket perdido, R$ 40,00), além de 10 vagas de carro ocupadas.
 
 Aborto do init confirmado nas duas pontas: injetando `SELECT 1/0;` no fim de `01_ddl.sql` e, em outra subida, no fim de `04_indices.sql`, `docker compose up -d --wait` devolveu `EXIT_COPOSE=1`, o container ficou `Exited (3)`, o log mostrou `ERROR: division by zero` e **não** mostrou `[init] concluído.`. Os arquivos foram restaurados e a subida limpa foi repetida com sucesso (estado final `healthy`).
+
+## Testes de DDL/constraints (A5)
+
+Projeto Maven em [`app/`](app/): Java 21, driver PostgreSQL e JUnit 5. O serviço `testes` (perfil `testes`) usa [`docker/Dockerfile.testes`](docker/Dockerfile.testes) com `maven:3.9-eclipse-temurin-21`, monta `./app` em `/app` e recebe `DB_URL`, `DB_USER` e `DB_PASSWORD` do compose; `depends_on` espera o `postgres` ficar `healthy`. A conexão JDBC usa `autoCommit=false`, `rollback()` ao final de cada teste e `Savepoint` antes de cada inserção que deve falhar, para que o erro não deixe a transação abortada. Valores são passados por bind (`?`), sem concatenação.
+
+Quatro testes em [`app/src/test/java/br/estacionamento/DdlConstraintTest.java`](app/src/test/java/br/estacionamento/DdlConstraintTest.java):
+
+| Teste | Validação |
+|---|---|
+| `constraintsSaoNomeadas` | 7 `pk_`, 5 `uk_`, 8 `fk_` e 15 `ck_` no catálogo; 0 fora do padrão de nome. |
+| `placaInvalidaBarrada` | `ABC-123` gera `23514` e `ck_veiculo_placa`. |
+| `saidaIgualOuAnteriorEntradaBarrada` | `saida = entrada` gera `23514` e `ck_permanencia_saida`. |
+| `pagamentoDuplicadoBarrado` | 2º pagamento da mesma permanência gera `23505` e `uk_pagamento_permanencia`. |
+
+Saída real de `docker compose down -v && docker compose up -d --wait && docker compose run --rm testes`: `UP_EXIT=0`, `TESTES_EXIT=0`, `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` e `BUILD SUCCESS` (PostgreSQL 17.12). O container `postgres` permanece `healthy`.
 
 ## DER e Decisões de Modelagem
 
