@@ -100,10 +100,11 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### A6. README — modelagem
-- [ ] Resumo do domínio e problema; DER; decisões de modelagem justificadas; normalização.
+- [x] Resumo do domínio e problema; DER; decisões de modelagem justificadas; normalização.
 - **Pronto quando:** um leitor entende o modelo sem abrir o DDL; o professor consegue arguir qualquer decisão.
+- **Saída real:** README com as 7 tabelas e papéis, cardinalidades, decisões e análise 1FN/2FN/3FN com as redundâncias históricas justificadas; `der/estacionamento.png` válida (27.845 bytes, assinatura PNG) e referenciada no README.
 - **Depende de:** A1, A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ## Frente B — Consultas e desempenho (14 pts)
 
