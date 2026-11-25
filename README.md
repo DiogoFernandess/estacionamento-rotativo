@@ -271,13 +271,22 @@ Artefatos: [`performance/medir.sql`](performance/medir.sql) e [`performance/expl
 
 Medição feita em projeto Compose separado (`estacionamento-b5`, porta 5434, volume próprio), sem criar/derrubar índice no `public`: `UP_EXIT=0`, `MEDIR_EXIT=0` (`132000 | 120000 | 120`); consultas Q01, Q07 e Q08 extraídas de `03_consultas.sql` por `@Qnn` e executadas com `SET search_path TO medicao, public;` e `EXPLAIN (ANALYZE, BUFFERS)`. Depois do plano "antes", os três índices foram criados **somente em `medicao`** e o plano "depois" foi capturado novamente; `public` continuou com 3 índices e 7 tabelas, e a suíte JUnit nesse banco deu `14` testes/`BUILD SUCCESS`. Projeto temporário removido (`DOWN_EXIT=0`).
 
-| Consulta | Antes | Depois |
+| Consulta | Antes: acesso a `permanencia` / custo / buffers / tempo | Depois: acesso a `permanencia` / custo / buffers / tempo |
 |---|---|---|
-| Q01 | `Seq Scan on permanencia`, 17,561 ms | `Bitmap Index Scan` em `idx_permanencia_status_entrada`, 10,329 ms |
-| Q07 | `Seq Scan on permanencia` no anti-join, 1,356 ms | `Index Only Scan` em `idx_permanencia_vaga_entrada` (`Heap Fetches: 0`), 1,345 ms |
-| Q08 | `Seq Scan on permanencia`, 74,748 ms | `Seq Scan on permanencia`, 70,467 ms (sem mudança de plano) |
+| Q01 | `Seq Scan` (filtro `ABERTA`, 12.000 linhas, 120.000 removidas) / `0.00..2884.00` / `hit=1234` / **17,561 ms** | `Bitmap Index Scan` em `idx_permanencia_status_entrada` + `Bitmap Heap Scan` (`Heap Blocks: exact=113`) / `138.24..1523.77` / `hit=113 read=12` / **10,329 ms** |
+| Q07 | `Seq Scan` no `Nested Loop Anti Join` (estimativa 132.000 linhas, `loops=120`) / `0.14..3479.71` (anti-join) / `hit=255` / **1,356 ms** | `Index Only Scan` em `idx_permanencia_vaga_entrada` (`Index Cond: vaga_id = va.vaga_id`, `Heap Fetches: 0`) / `0.29..45.07` (anti-join) / `hit=124 read=118` / **1,345 ms** |
+| Q08 | `Seq Scan` (filtro `FECHADA`, 120.000 linhas, 12.000 removidas) / `0.00..2884.00` / `hit=1234` / **74,748 ms** | `Seq Scan` (mesmo filtro) / `0.00..2884.00` / `hit=1234` / **70,467 ms** — sem mudança de plano |
 
-Q08 não mudou de plano porque `status = 'FECHADA'` seleciona 120.000 de 132.000 linhas (~90,9%): baixa seletividade. `idx_permanencia_veiculo` foi criado, mas nenhuma das três consultas medidas o usou. Os planos completos, com `Buffers` e tempos reais, estão em `explain_antes_depois.txt`; nenhum tempo foi estimado ou inventado.
+Custo é a estimativa impressa pelo próprio `EXPLAIN`; buffers e tempos são da saída real. Os planos completos estão em [`performance/explain_antes_depois.txt`](performance/explain_antes_depois.txt).
+
+#### Por que os planos mudaram (B6)
+
+- **Q01 — `Seq Scan` → `Bitmap Index Scan`:** `status = 'ABERTA'` seleciona 12.000 de 132.000 linhas (~9,1%). Sem índice, o `Seq Scan` lê a tabela inteira e descarta 120.000 linhas. Com `idx_permanencia_status_entrada` (coluna líder `status`), o planejador monta um bitmap das páginas com ABERTAs e o `Bitmap Heap Scan` visita só elas (`Heap Blocks: exact=113`): o custo do nó cai de `2884.00` para `1523.77` e os buffers de 1234 `hit` para 113 `hit` + 12 `read`. `Hash Right Join`, `Sort` e `GroupAggregate` continuam iguais — a mudança é somente o caminho de acesso à tabela. Tempo medido: 17,561 → 10,329 ms (7,232 ms a menos nesta execução).
+- **Q07 — `Seq Scan` → `Index Only Scan`:** o `NOT EXISTS` vira `Nested Loop Anti Join` com `p.vaga_id = va.vaga_id`. Sem índice, cada uma das 120 vagas sonda `permanencia` com `Seq Scan` (estimativa de 132.000 linhas por sonda, `loops=120`). Com `idx_permanencia_vaga_entrada` (coluna líder `vaga_id`), a sonda usa `Index Cond` e retorna ~1 linha por vaga; como a consulta precisa apenas de `vaga_id`, coluna já presente no índice, `Heap Fetches: 0`. O custo do anti-join cai de `3479.71` para `45.07`. O tempo quase não mudou (1,356 → 1,345 ms) porque no plano "antes" as páginas já estavam em cache (`shared hit`) e o anti-join para cedo; o ganho está em menos páginas tocadas e tende a crescer com mais vagas/dados — não vamos exagerar esse resultado.
+- **Q08 — sem mudança:** `status = 'FECHADA'` casa 120.000 de 132.000 linhas (~90,9%). Um índice em `(status, entrada)` exigiria visitar quase todas as páginas da tabela mais as do índice, então o planejador escolhe `Seq Scan` nos dois planos, com o mesmo custo `0.00..2884.00` e os mesmos 1234 buffers. A diferença de 74,748 para 70,467 ms é variação entre as duas execuções, não melhora causada por índice: índice não ajuda predicado de baixa seletividade.
+- **`idx_permanencia_veiculo`:** criado em `medicao`, mas nenhuma das três consultas medidas filtra ou junge por `veiculo_id` de forma seletiva (Q03 agrupa por veículo e não foi uma das três). Por isso não aparece nos planos; não há tempo ou ganho inventado para ele.
+
+Todos os números acima foram lidos das saídas brutas de `EXPLAIN (ANALYZE, BUFFERS)`; nenhum tempo foi estimado, arredondado de outro modo ou inventado.
 
 Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para `1000` e estourava `uk_medicao_veiculo_placa`; trocado por `'VE' || lpad(g::text, 5, '0')` (7 caracteres), após o que o `medir.sql` rodou com `MEDIR_EXIT=0`.
 
@@ -309,6 +318,6 @@ Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para 
 ## Próximos passos
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
-2. Frente B (em andamento): consultas, resultados esperados, testes JUnit, índices e medição concluídos (B1–B5); falta documentar o antes/depois (B6).
+2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
 3. Frente C: procedures/triggers, app Java e suíte JUnit.
 4. Frente D: README final, log de IA, tag, zip e apresentação.

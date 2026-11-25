@@ -151,12 +151,13 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### B6. Documento de performance
-- [ ] Salvar `performance/explain_antes_depois.txt` com os planos e tempos reais.
-- [ ] Colocar a tabela antes/depois no README.
-- [ ] Explicar o que mudou no plano (Seq Scan × Index Scan) e por que.
+- [x] Salvar `performance/explain_antes_depois.txt` com os planos e tempos reais.
+- [x] Colocar a tabela antes/depois no README.
+- [x] Explicar o que mudou no plano (Seq Scan × Index Scan) e por que.
 - **Pronto quando:** o README mostra números medidos, não estimados.
+- **Saída real:** `performance/explain_antes_depois.txt` (225 linhas) com 6 `Execution Time` reais: Q01 17,561 → 10,329 ms (`Seq Scan` → `Bitmap Index Scan` em `idx_permanencia_status_entrada`); Q07 1,356 → 1,345 ms (`Seq Scan` → `Index Only Scan` em `idx_permanencia_vaga_entrada`, `Heap Fetches: 0`); Q08 74,748 → 70,467 ms (sem mudança de plano: `FECHADA` = 90,9% das linhas). README com tabela custo/buffers/tempo e explicação de cada plano, incluindo por que `idx_permanencia_veiculo` não apareceu.
 - **Depende de:** B5
-- **Dono:** ______
+- **Dono:** Vicente
 
 ## Frente C — Procedures, triggers e aplicação (10 pts)
 
