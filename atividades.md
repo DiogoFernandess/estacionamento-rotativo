@@ -118,11 +118,12 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### B2. Resultados esperados
-- [ ] Calcular à mão os resultados das 10 consultas a partir do seed.
-- [ ] Registrar os valores no README ou na suíte de testes.
+- [x] Calcular à mão os resultados das 10 consultas a partir do seed.
+- [x] Registrar os valores no README ou na suíte de testes.
 - **Pronto quando:** cada consulta tem resultado esperado explícito, incluindo fronteiras (empate, 15 min, lost ticket, ROLLUP).
+- **Saída real:** README com a derivação de Q01–Q10 a partir do seed (somas por dia, ranking com empate na posição 10, 15:00 vs 15:01 e 5h00:00 vs 5h00:01, ticket perdido, 6 células + 2 subtotais + total do ROLLUP); valores conferidos com a execução real do B1.
 - **Depende de:** B1
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B3. Testes das consultas (JUnit)
 - [ ] 10 testes, um por `@Qnn`, lendo `postgresql/03_consultas.sql`.
