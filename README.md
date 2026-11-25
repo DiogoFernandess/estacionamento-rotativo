@@ -245,6 +245,26 @@ Saída real: `docker compose run --rm testes` → `TESTES_EXIT=0`, `Tests run: 1
 
 Verificação de sensibilidade: cópia temporária do SQL com `WHERE va.ativa` trocado por `WHERE NOT va.ativa` (via `SQL_CONSULTAS`) → `Tests run: 14, Failures: 2, Errors: 0, Skipped: 0`, `BUILD FAILURE`, com falhas em `q01OcupacaoAtualPorTipo` e `q07VagasNuncaUtilizadas`. O arquivo original não foi modificado e a cópia foi removida.
 
+### Índices de performance (B4)
+
+Arquivo: [`postgresql/04_indices.sql`](postgresql/04_indices.sql), executado pelo init na ordem DDL → seed → procedures → índices. Três índices btree em `permanencia`, com `IF NOT EXISTS` para permitir reaplicação sem `DROP`. O índice único parcial `uk_permanencia_veiculo_aberta` (RN-07) continua vindo do `01_ddl.sql` e não é duplicado aqui.
+
+| Índice | Colunas | Uso previsto |
+|---|---|---|
+| `idx_permanencia_veiculo` | `(veiculo_id)` | gasto por veículo e histórico (Q03) |
+| `idx_permanencia_vaga_entrada` | `(vaga_id, entrada)` | ocupação/sobreposição por vaga (Q01, Q07) |
+| `idx_permanencia_status_entrada` | `(status, entrada)` | abertas/fechadas e duração (Q04, Q05, Q08) |
+
+Validação em banco criado do zero sem derrubar o volume compartilhado: projeto Compose separado `estacionamento-b4`, porta 5434 e volume próprio → `UP_EXIT=0`, log com `[init] executando /scripts/postgresql/04_indices.sql` e `[init] concluído.`; catálogo com exatamente 3 índices e `indexdef`:
+
+```text
+idx_permanencia_status_entrada | CREATE INDEX idx_permanencia_status_entrada ON public.permanencia USING btree (status, entrada)
+idx_permanencia_vaga_entrada   | CREATE INDEX idx_permanencia_vaga_entrada ON public.permanencia USING btree (vaga_id, entrada)
+idx_permanencia_veiculo        | CREATE INDEX idx_permanencia_veiculo ON public.permanencia USING btree (veiculo_id)
+```
+
+Suíte no mesmo banco limpo: `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`. Os índices também foram aplicados no banco de laboratório compartilhado (`APLICAR_EXIT=0`, 3 `CREATE INDEX`, catálogo idêntico); o projeto temporário foi removido com `down -v` (`DOWN_EXIT=0`).
+
 ## Estrutura
 
 ```text
@@ -273,6 +293,6 @@ Verificação de sensibilidade: cópia temporária do SQL com `WHERE va.ativa` t
 ## Próximos passos
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
-2. Frente B (em andamento): 10 consultas, resultados esperados e testes JUnit concluídos (B1–B3); faltam índices e `EXPLAIN` antes/depois.
+2. Frente B (em andamento): consultas, resultados esperados, testes JUnit e índices concluídos (B1–B4); falta massa de dados e `EXPLAIN` antes/depois.
 3. Frente C: procedures/triggers, app Java e suíte JUnit.
 4. Frente D: README final, log de IA, tag, zip e apresentação.
