@@ -193,8 +193,6 @@ Redundâncias mantidas de propósito, todas com justificativa no modelo:
 | `auditoria_permanencia.status_antes/depois` e `valor_antes/depois` | É log temporal: guarda o que era e o que passou a ser no evento, não uma cópia substituível da linha atual. |
 | `pagamento.permanencia_id` com FK + UK | É a cardinalidade 0..1: no máximo um pagamento por permanência; valor 0 não gera pagamento (RN-09). |
 
-Não há campos de cliente, mensalidade, reserva ou status em `vaga` porque estão fora do escopo fechado em `decisions.md` §1–§3.
-
 ## Estrutura
 
 ```text
