@@ -235,6 +235,16 @@ Derivação a partir do seed, antes de comparar com a saída real do B1. Seja `S
 
 Os números acima são os mesmos obtidos na execução real do B1; Q02 e Q09 dependem da data da subida porque o seed usa `CURRENT_DATE`/`CURRENT_TIMESTAMP`.
 
+### Testes JUnit das consultas (B3)
+
+Arquivo: [`app/src/test/java/br/estacionamento/ConsultasQ01aQ10Test.java`](app/src/test/java/br/estacionamento/ConsultasQ01aQ10Test.java). Cada teste lê `postgresql/03_consultas.sql` do disco, isola o trecho entre `-- @Qnn` e o próximo marcador, executa só aquele `SELECT` e compara linhas/valores com os resultados derivados na B2. Para Q05 (horas das abertas dependem da subida) a asserção forte é a soma: 31 entradas e 17 saídas; para Q09 as datas são comparadas com `DATE_TRUNC('month', CURRENT_DATE)` lido do próprio banco. Cada teste roda em transação com `rollback` no `@AfterEach`.
+
+O serviço `testes` monta `./postgresql` em `/scripts/postgresql:ro` para o JUnit acessar o arquivo de consultas; fora do Docker o teste procura `postgresql/03_consultas.sql` ou `../postgresql/03_consultas.sql`, e aceita override por `SQL_CONSULTAS`.
+
+Saída real: `docker compose run --rm testes` → `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0` e `BUILD SUCCESS` (10 testes novos de consulta + 4 da A5).
+
+Verificação de sensibilidade: cópia temporária do SQL com `WHERE va.ativa` trocado por `WHERE NOT va.ativa` (via `SQL_CONSULTAS`) → `Tests run: 14, Failures: 2, Errors: 0, Skipped: 0`, `BUILD FAILURE`, com falhas em `q01OcupacaoAtualPorTipo` e `q07VagasNuncaUtilizadas`. O arquivo original não foi modificado e a cópia foi removida.
+
 ## Estrutura
 
 ```text
@@ -250,7 +260,7 @@ Os números acima são os mesmos obtidos na execução real do B1; Q02 e Q09 dep
 ├── postgresql/           # 01_ddl, 02_inserts, 03_consultas, 04_indices
 ├── procedures/           # procedures e triggers (Frente C)
 ├── performance/          # massa de dados e EXPLAIN antes/depois (Frente B)
-├── app/                  # aplicação Java/Maven e testes (Frente C)
+├── app/                  # aplicação Java/Maven; testes DDL (A5) e consultas (B3)
 └── docker/               # init do PostgreSQL e Dockerfiles
 ```
 
@@ -263,6 +273,6 @@ Os números acima são os mesmos obtidos na execução real do B1; Q02 e Q09 dep
 ## Próximos passos
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
-2. Frente B: 10 consultas, índices e `EXPLAIN` antes/depois.
+2. Frente B (em andamento): 10 consultas, resultados esperados e testes JUnit concluídos (B1–B3); faltam índices e `EXPLAIN` antes/depois.
 3. Frente C: procedures/triggers, app Java e suíte JUnit.
 4. Frente D: README final, log de IA, tag, zip e apresentação.
