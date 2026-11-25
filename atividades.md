@@ -142,12 +142,13 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### B5. Massa de dados e medição
-- [ ] `performance/medir.sql` cria esquema separado com 100k+ permanências e pagamentos.
-- [ ] Medir as consultas **antes** dos índices e **depois** de criá-los no esquema de teste.
-- [ ] Não criar/derrubar índices no esquema principal; não inventar tempos.
+- [x] `performance/medir.sql` cria esquema separado com 100k+ permanências e pagamentos.
+- [x] Medir as consultas **antes** dos índices e **depois** de criá-los no esquema de teste.
+- [x] Não criar/derrubar índices no esquema principal; não inventar tempos.
 - **Pronto quando:** há planos reais antes/depois para as 3 consultas.
+- **Saída real:** projeto isolado `estacionamento-b5` (porta 5434) → `UP_EXIT=0`, `MEDIR_EXIT=0` (132.000 permanências, 120.000 pagamentos, 120 vagas); `EXPLAIN (ANALYZE, BUFFERS)` de Q01/Q07/Q08 antes e depois dos 3 índices criados só em `medicao`; `public` inalterado (3 índices, 7 tabelas), suíte 14/14 com `BUILD SUCCESS`, `DOWN_EXIT=0`. Planos e tempos reais em `performance/explain_antes_depois.txt` e tabela no README.
 - **Depende de:** B4
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B6. Documento de performance
 - [ ] Salvar `performance/explain_antes_depois.txt` com os planos e tempos reais.
