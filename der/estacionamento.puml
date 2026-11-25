@@ -1,0 +1,100 @@
+@startuml estacionamento
+
+title <b>DER — Estacionamento Rotativo Central</b>\n
+
+skinparam linetype ortho
+skinparam entityStyle rectangle
+skinparam wrapWidth 300
+skinparam defaultFontSize 12
+skinparam shadowing false
+hide circle
+
+' ---------- 1. tipo_veiculo ----------
+entity "tipo_veiculo" as tv {
+  * tipo_id INTEGER <<PK>>
+  --
+  nome VARCHAR(5) <<UK>>
+}
+
+' ---------- 2. vaga ----------
+entity "vaga" as v {
+  * vaga_id INTEGER <<PK>>
+  --
+  codigo VARCHAR(4) <<UK>>
+  # tipo_id INTEGER <<FK>>
+  ativa BOOLEAN
+}
+
+' ---------- 3. veiculo ----------
+entity "veiculo" as ve {
+  * veiculo_id INTEGER <<PK>>
+  --
+  placa VARCHAR(7) <<UK>>
+  # tipo_id INTEGER <<FK>>
+}
+
+' ---------- 4. tarifa ----------
+entity "tarifa" as t {
+  * tarifa_id INTEGER <<PK>>
+  --
+  # tipo_id INTEGER <<FK>>
+  vigencia_inicio TIMESTAMP
+  tolerancia_min INTEGER
+  primeira_hora NUMERIC(10,2)
+  fracao_min INTEGER
+  fracao_valor NUMERIC(10,2)
+  teto NUMERIC(10,2)
+  ticket_perdido NUMERIC(10,2)
+}
+
+' ---------- 5. permanencia (entidade associativa com estado) ----------
+entity "permanencia" as p {
+  * permanencia_id INTEGER <<PK>>
+  --
+  # veiculo_id INTEGER <<FK>>
+  # vaga_id INTEGER <<FK>>
+  # tarifa_id INTEGER <<FK>>
+  entrada TIMESTAMP
+  saida TIMESTAMP
+  valor NUMERIC(10,2)
+  status VARCHAR(7)
+  ticket_perdido BOOLEAN
+}
+
+' ---------- 6. pagamento ----------
+entity "pagamento" as pg {
+  * pagamento_id INTEGER <<PK>>
+  --
+  # permanencia_id INTEGER <<FK,UK>>
+  valor NUMERIC(10,2)
+  forma VARCHAR(8)
+  data_hora TIMESTAMP
+}
+
+' ---------- 7. auditoria_permanencia ----------
+entity "auditoria_permanencia" as au {
+  * auditoria_id INTEGER <<PK>>
+  --
+  # permanencia_id INTEGER <<FK>>
+  operacao VARCHAR(6)
+  status_antes VARCHAR(7)
+  status_depois VARCHAR(7)
+  valor_antes NUMERIC(10,2)
+  valor_depois NUMERIC(10,2)
+  usuario_bd VARCHAR(63)
+  data_hora TIMESTAMP
+}
+
+' ============================================================
+' Cardinalidades (min, max) — decisions.md §3
+' ============================================================
+tv ||--o{ v  : "classifica"
+tv ||--o{ ve : "classifica"
+tv ||--|{ t  : "tem"
+ve ||--o{ p  : "possui"
+v  ||--o{ p  : "e ocupada por"
+t  ||--o{ p  : "precifica"
+p  ||--o| pg : "tem"
+p  ||--|{ au : "gera"
+
+@enduml

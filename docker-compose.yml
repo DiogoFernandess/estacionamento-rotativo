@@ -24,5 +24,20 @@ services:
       retries: 20
       start_period: 10s
 
+  testes:
+    profiles: ["testes"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.testes
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/estacionamento
+      DB_USER: estacionamento
+      DB_PASSWORD: estacionamento_pwd
+    volumes:
+      - ./app:/app
+
 volumes:
   pg_dados:

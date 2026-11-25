@@ -2,12 +2,17 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "opencode/deepseek-v4.1-flash-free",
   "instructions": ["decisions.md", "atividades.md", "AGENTS.md"],
-  "permissions": [
-    { "action": "shell", "resource": "*", "effect": "ask" },
-    { "action": "shell", "resource": "git status *", "effect": "allow" },
-    { "action": "shell", "resource": "git diff *", "effect": "allow" },
-    { "action": "shell", "resource": "git log *", "effect": "allow" },
-    { "action": "shell", "resource": "git push *", "effect": "deny" },
-    { "action": "edit", "resource": "decisions.md", "effect": "deny" }
-  ]
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "git status *": "allow",
+      "git diff *": "allow",
+      "git log *": "allow",
+      "git push *": "deny"
+    },
+    "edit": {
+      "*": "ask",
+      "decisions.md": "deny"
+    }
+  }
 }
