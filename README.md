@@ -459,6 +459,28 @@ psql:/dev/stdin:155: NOTICE:  SQLSTATE=P0001 ESTAC-004: veículo XYZ1K11 é do t
 
 Cobertura dos cenários pedidos: entrada feliz (C3.1), sem vaga `ESTAC-001` após ocupar as 16 vagas livres de moto no mesmo teste (C3.2), veículo já aberto `ESTAC-006` (C3.3), saída na tolerância 15:00 com valor 0 e sem pagamento (C3.4), fronteiras 60:00/60:01 e 90:00/90:01 (C3.5, C3.6), teto da permanência de 10h do seed R$ 45,00 (C3.7), ticket perdido R$ 60,00 com `ticket_perdido=t` (C3.8), saída dupla `ESTAC-002` (C3.9) e tipo incompatível `ESTAC-004` (C3.10).
 
+## Testes JUnit de procedures, triggers e concorrência (C4)
+
+Testes em `app/src/test/java/br/estacionamento/`: `ProcedureTest.java` (7), `TriggerTest.java` (3) e `ConcorrenciaTest.java` (1). Cada teste usa transação com rollback; erros esperados usam `Savepoint`. O teste de concorrência abre duas conexões, ocupa 15 das 16 vagas livres de moto em setup commitado, dispara duas chamadas paralelas a `registrar_entrada` com barreira e verifica que exatamente uma vence e a outra recebe `ESTAC-001`; ao final faz rollback das conexões concorrentes e limpa os dados de teste.
+
+**Saída real** (`WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --build testes`, postgres `healthy`):
+
+```text
+[INFO] Running br.estacionamento.ConcorrenciaTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running br.estacionamento.ConsultasQ01aQ10Test
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running br.estacionamento.DdlConstraintTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running br.estacionamento.ProcedureTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running br.estacionamento.TriggerTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+
+[INFO] Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
 ## Estrutura
 
 ```text
@@ -488,5 +510,5 @@ Cobertura dos cenários pedidos: entrada feliz (C3.1), sem vaga `ESTAC-001` apó
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
 2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
-3. Frente C: procedures (C1), triggers (C2) e testes manuais de lógica (C3) concluídos; faltam testes JUnit de procedures/triggers/concorrência (C4), app Java (C5), Docker da aplicação/testes (C6) e README/IA da aplicação (C7).
+3. Frente C: procedures (C1), triggers (C2), testes manuais de lógica (C3) e testes JUnit de procedures/triggers/concorrência (C4) concluídos; faltam app Java (C5), Docker da aplicação/testes (C6) e README/IA da aplicação (C7).
 4. Frente D: README final, log de IA, tag, zip e apresentação.
