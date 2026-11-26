@@ -171,12 +171,13 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### C2. Triggers
-- [ ] `trg_permanencia_valida` (BEFORE INSERT/UPDATE): tipo, sobreposição e segunda permanência aberta.
-- [ ] `trg_permanencia_auditoria` (AFTER INSERT/UPDATE OF status, valor): antes/depois, usuário e data.
-- [ ] Garantir que INSERT direto na tabela também é barrado.
+- [x] `trg_permanencia_valida` (BEFORE INSERT/UPDATE): tipo, sobreposição e segunda permanência aberta.
+- [x] `trg_permanencia_auditoria` (AFTER INSERT/UPDATE OF status, valor): antes/depois, usuário e data.
+- [x] Garantir que INSERT direto na tabela também é barrado.
 - **Pronto quando:** os triggers disparam nos testes e gravam a auditoria correta.
+- **Saída real:** psql com `ON_ERROR_STOP=1`: INSERT direto incompatível → `ESTAC-004`, em vaga já aberta → `ESTAC-005` e com veículo já aberto → `ESTAC-006` (todos `P0001`); INSERT direto válido gera auditoria `INSERT / NULL → ABERTA / NULL → 0.00`; UPDATE de valor na própria permanência aberta não é barrado e grava `UPDATE / ABERTA → ABERTA / 0.00 → 1.00`; `registrar_saida` grava `UPDATE / ABERTA → FECHADA / 0.00 → 45.00` com `usuario_bd=estacionamento`; UPDATE só em `ticket_perdido` não gera auditoria. Catálogo mostra os 2 triggers. `down -v` + `up -d --wait`: `DOWN_EXIT=0`, `UP_EXIT=0`, `healthy`; seed com 31 permanências e 0 auditorias (o init roda o seed antes dos triggers); suíte `TESTES_EXIT=0` (`14` testes, `BUILD SUCCESS`). Detalhes no README.
 - **Depende de:** A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### C3. Testes manuais de lógica
 - [ ] Testar no psql: entrada feliz, sem vaga, veículo já aberto, saída na tolerância, 60/60:01, 90/90:01, teto e ticket perdido.

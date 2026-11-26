@@ -321,6 +321,28 @@ O tempo exato das fronteiras foi obtido inserindo a permanência com `entrada = 
 
 Erro real encontrado e corrigido na C1: `v_tipo VARCHAR(5)` estourava com `CAMINHAO` (`SQLSTATE=22001`) antes de checar o `ESTAC-004`. As variáveis de normalização passaram a `VARCHAR(50)` (inclusive `v_forma`), mantendo o erro de negócio com `P0001`/`ESTAC-00x` como previsto.
 
+## Triggers de permanência (C2)
+
+Mesmo arquivo [`procedures/postgresql_procedures.sql`](procedures/postgresql_procedures.sql), após as procedures. O caminho oficial continua sendo as procedures; os triggers são a rede de segurança para `INSERT`/`UPDATE` diretos (`decisions.md` §4).
+
+- `trg_permanencia_valida` (`BEFORE INSERT OR UPDATE`) — tipo do veículo = tipo da vaga (`ESTAC-004`, RN-06); no máximo uma permanência ABERTA por vaga (`ESTAC-005`) e por veículo (`ESTAC-006`, RN-07). Sobreposição e segunda aberta só são avaliadas quando `NEW.status = 'ABERTA'`: permanências FECHADAS convivem na mesma vaga em horários distintos (é o que o seed faz). Em `UPDATE`, a própria `NEW.permanencia_id` é excluída das duas checagens.
+- `trg_permanencia_auditoria` (`AFTER INSERT OR UPDATE OF status, valor`) — grava operação, `status`/`valor` antes e depois, `usuario_bd` (`CURRENT_USER`) e `data_hora` em `auditoria_permanencia`. `INSERT` não tem "antes"; `UPDATE` que não toca `status`/`valor` não dispara.
+
+**Saída real do psql** (cada cenário em transação com `ROLLBACK`, `ON_ERROR_STOP=1`):
+
+```text
+INSERT direto, moto em vaga de carro -> SQLSTATE=P0001 ESTAC-004: tipo do veículo (2) difere do tipo da vaga (1)
+INSERT direto em C010 (já ABERTA)    -> SQLSTATE=P0001 ESTAC-005: vaga já possui permanência aberta: 10
+INSERT direto, QRS1A11 (já ABERTA)   -> SQLSTATE=P0001 ESTAC-006: veículo já possui permanência aberta: 10
+INSERT direto válido                 -> auditoria INSERT | antes NULL/NULL | depois ABERTA/0.00 | usuario estacionamento
+UPDATE valor=1 na permanência 18     -> auditoria UPDATE | ABERTA -> ABERTA | 0.00 -> 1.00 (não barrado pela própria aberta)
+registrar_saida(18,'PIX',FALSE)      -> auditoria UPDATE | ABERTA -> FECHADA | 0.00 -> 45.00 | usuario estacionamento
+UPDATE só em ticket_perdido          -> auditorias antes=0 depois=0 (trigger não dispara)
+catálogo: trg_permanencia_valida (BEFORE INSERT OR UPDATE) e trg_permanencia_auditoria (AFTER INSERT OR UPDATE OF status, valor)
+```
+
+**Subida limpa após a C2:** `docker compose down -v` (`DOWN_EXIT=0`) + `docker compose up -d --wait` (`UP_EXIT=0`, `healthy`). O init executa `02_inserts` **antes** das procedures, então o seed permanece com 31 permanências e `0` auditorias; os 2 triggers e as 4 funções (`registrar_entrada`, `registrar_saida`, `fn_permanencia_valida`, `fn_permanencia_auditoria`) aparecem no catálogo. Suíte JUnit: `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`.
+
 ## Estrutura
 
 ```text
