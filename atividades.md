@@ -126,11 +126,12 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### B3. Testes das consultas (JUnit)
-- [ ] 10 testes, um por `@Qnn`, lendo `postgresql/03_consultas.sql`.
-- [ ] Separar o arquivo por `@Qnn` e comparar linhas/valores esperados.
+- [x] 10 testes, um por `@Qnn`, lendo `postgresql/03_consultas.sql`.
+- [x] Separar o arquivo por `@Qnn` e comparar linhas/valores esperados.
 - **Pronto quando:** os 10 passam e falham se a consulta mudar de resultado.
+- **Saída real:** `docker compose run --rm testes` → `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0` e `BUILD SUCCESS` (10 novos + 4 da A5). Cópia temporária com `WHERE va.ativa` invertido → `Failures: 2`, `BUILD FAILURE` (Q01 e Q07), arquivo original intacto. Detalhes no README.
 - **Depende de:** B1, B2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B4. Três índices
 - [ ] `04_indices.sql` com `idx_permanencia_veiculo`, `idx_permanencia_vaga_entrada` e `idx_permanencia_status_entrada`.

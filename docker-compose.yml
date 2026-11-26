@@ -38,6 +38,7 @@ services:
       DB_PASSWORD: estacionamento_pwd
     volumes:
       - ./app:/app
+      - ./postgresql:/scripts/postgresql:ro
 
 volumes:
   pg_dados:
