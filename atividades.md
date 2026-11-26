@@ -162,12 +162,13 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 ## Frente C — Procedures, triggers e aplicação (10 pts)
 
 ### C1. Procedures
-- [ ] `registrar_entrada(p_placa, p_tipo)` conforme `decisions.md`: valida tipo/veículo, tarifa ativa, vaga livre com `FOR UPDATE SKIP LOCKED`, insere permanência.
-- [ ] `registrar_saida(p_permanencia_id, p_forma_pagamento, p_ticket_perdido)`: trava, calcula, valida pagamento, fecha e insere pagamento.
-- [ ] Comentários dizendo qual regra cada procedure implementa; **sem COMMIT**.
+- [x] `registrar_entrada(p_placa, p_tipo)` conforme `decisions.md`: valida tipo/veículo, tarifa ativa, vaga livre com `FOR UPDATE SKIP LOCKED`, insere permanência.
+- [x] `registrar_saida(p_permanencia_id, p_forma_pagamento, p_ticket_perdido)`: trava, calcula, valida pagamento, fecha e insere pagamento.
+- [x] Comentários dizendo qual regra cada procedure implementa; **sem COMMIT**.
 - **Pronto quando:** as duas rodam no psql no caminho feliz e nos erros de negócio.
+- **Saída real:** psql com `ON_ERROR_STOP=1`, 10 cenários em transações com `ROLLBACK`: entrada normalizada `abc-3e45` → vaga `C001`; `ESTAC-004` (tipo inválido e tipo incompatível), `ESTAC-006` (aberta existente), `ESTAC-002` (saída repetida) e `ESTAC-003` (forma inválida), todos com `SQLSTATE=P0001`; saída da permanência semeada há 10h → `45,00` com pagamento `PIX`; 8 fronteiras conferidas (15:00/15:01, 60:00/60:01, 90:00/90:01, 5h00:00/5h00:01) e ticket perdido `60,00` com `ticket_perdido=t` persistido (Q08); tolerância com valor `0,00` e nenhum pagamento. Catálogo mostra as 2 procedures com os parâmetros esperados. `down -v` + `up -d --wait`: `DOWN_EXIT=0`, `UP_EXIT=0`, `healthy`; suíte `TESTES_EXIT=0` (`14` testes, `BUILD SUCCESS`). Detalhes no README.
 - **Depende de:** A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### C2. Triggers
 - [ ] `trg_permanencia_valida` (BEFORE INSERT/UPDATE): tipo, sobreposição e segunda permanência aberta.
