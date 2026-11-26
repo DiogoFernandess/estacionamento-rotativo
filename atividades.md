@@ -180,11 +180,12 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### C3. Testes manuais de lógica
-- [ ] Testar no psql: entrada feliz, sem vaga, veículo já aberto, saída na tolerância, 60/60:01, 90/90:01, teto e ticket perdido.
-- [ ] Testar saída dupla (`ESTAC-002`) e tipo incompatível (`ESTAC-004`).
+- [x] Testar no psql: entrada feliz, sem vaga, veículo já aberto, saída na tolerância, 60/60:01, 90/90:01, teto e ticket perdido.
+- [x] Testar saída dupla (`ESTAC-002`) e tipo incompatível (`ESTAC-004`).
 - **Pronto quando:** as saídas reais estão registradas para o README/log.
+- **Saída real:** `docker compose down -v` + `WSLENV=PG_PORT PG_PORT=5433 docker.exe compose up -d --wait` (`healthy`) em banco limpo; 10 cenários executados no `psql` (`ON_ERROR_STOP=1`) em transações com `ROLLBACK`: entrada feliz `TST1A23/CARRO` → vaga `C001`; sem vaga após ocupar as 16 vagas livres de moto → `ESTAC-001`; veículo já aberto `QRS1A11` → `ESTAC-006`; tolerância 15:00 → `0,00` com 0 pagamentos; fronteiras 60:00/60:01 → `12,00/16,00` e 90:00/90:01 → `16,00/20,00`; teto da permanência 18 (10h, seed) → `45,00` PIX; ticket perdido 2 min → `60,00` DINHEIRO com `ticket_perdido=t`; saída dupla → `ESTAC-002`; tipo incompatível `XYZ1K11` como carro → `ESTAC-004`. Saída completa registrada no README.
 - **Depende de:** C1, C2
-- **Dono:** ______
+- **Dono:** Felipe
 
 ### C4. Testes JUnit de procedures/triggers/concorrência
 - [ ] 7 de procedures, 3 de triggers e 1 de concorrência (duas conexões para a última vaga).

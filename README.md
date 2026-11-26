@@ -343,6 +343,122 @@ catálogo: trg_permanencia_valida (BEFORE INSERT OR UPDATE) e trg_permanencia_au
 
 **Subida limpa após a C2:** `docker compose down -v` (`DOWN_EXIT=0`) + `docker compose up -d --wait` (`UP_EXIT=0`, `healthy`). O init executa `02_inserts` **antes** das procedures, então o seed permanece com 31 permanências e `0` auditorias; os 2 triggers e as 4 funções (`registrar_entrada`, `registrar_saida`, `fn_permanencia_valida`, `fn_permanencia_auditoria`) aparecem no catálogo. Suíte JUnit: `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`.
 
+## Testes manuais de lógica (C3)
+
+Execução manual no `psql` contra o banco recém-inicializado (`docker compose down -v` + `WSLENV=PG_PORT PG_PORT=5433 docker.exe compose up -d --wait`, `healthy`), com cada cenário em transação própria e `ROLLBACK` ao final. O script foi executado com `psql -U estacionamento -d estacionamento -v ON_ERROR_STOP=1 -f /dev/stdin` dentro do container `postgres`. Saída real:
+
+```text
+Pager usage is off.
+=== C3.1 entrada feliz ===
+BEGIN
+CALL
+ permanencia_id |  placa  | tipo  | vaga | status | valor | ticket_perdido 
+----------------+---------+-------+------+--------+-------+----------------
+             42 | TST1A23 | CARRO | C001 | ABERTA |  0.00 | f
+(1 row)
+
+ROLLBACK
+
+=== C3.2 sem vaga (MOTO) ===
+BEGIN
+INSERT 0 16
+INSERT 0 16
+DO
+psql:/dev/stdin:42: NOTICE:  SQLSTATE=P0001 ESTAC-001: sem vaga livre do tipo MOTO
+ROLLBACK
+
+=== C3.3 veiculo ja aberto ===
+BEGIN
+DO
+psql:/dev/stdin:54: NOTICE:  SQLSTATE=P0001 ESTAC-006: veículo QRS1A11 já possui permanência aberta
+ROLLBACK
+
+=== C3.4 saida na tolerancia (15:00) ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+CALL
+ permanencia_id | status  | valor | ticket_perdido | pagamentos 
+----------------+---------+-------+----------------+------------
+             59 | FECHADA |  0.00 | f              |          0
+(1 row)
+
+ROLLBACK
+
+=== C3.5 fronteiras 60:00 e 60:01 ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+CALL
+CALL
+ caso  | valor | status  
+-------+-------+---------
+ 60:00 | 12.00 | FECHADA
+ 60:01 | 16.00 | FECHADA
+(2 rows)
+
+ROLLBACK
+
+=== C3.6 fronteiras 90:00 e 90:01 ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+CALL
+CALL
+ caso  | valor | status  
+-------+-------+---------
+ 90:00 | 16.00 | FECHADA
+ 90:01 | 20.00 | FECHADA
+(2 rows)
+
+ROLLBACK
+
+=== C3.7 teto (10h, carro) ===
+BEGIN
+CALL
+ permanencia_id |  placa  | status  | valor | forma | pagamento_valor 
+----------------+---------+---------+-------+-------+-----------------
+             18 | QRS1A11 | FECHADA | 45.00 | PIX   |           45.00
+(1 row)
+
+ROLLBACK
+
+=== C3.8 ticket perdido ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+CALL
+ permanencia_id | status  | valor | ticket_perdido |  forma   | pagamento_valor 
+----------------+---------+-------+----------------+----------+-----------------
+             64 | FECHADA | 60.00 | t              | DINHEIRO |           60.00
+(1 row)
+
+ROLLBACK
+
+=== C3.9 saida dupla (ESTAC-002) ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+CALL
+SAVEPOINT
+psql:/dev/stdin:141: ERROR:  ESTAC-002: permanência inexistente ou já fechada: 65
+CONTEXT:  PL/pgSQL function registrar_saida(integer,character varying,boolean) line 15 at RAISE
+ROLLBACK
+ROLLBACK
+
+=== C3.10 tipo incompativel (ESTAC-004) ===
+BEGIN
+DO
+ROLLBACK
+psql:/dev/stdin:155: NOTICE:  SQLSTATE=P0001 ESTAC-004: veículo XYZ1K11 é do tipo MOTO, não CARRO
+```
+
+Cobertura dos cenários pedidos: entrada feliz (C3.1), sem vaga `ESTAC-001` após ocupar as 16 vagas livres de moto no mesmo teste (C3.2), veículo já aberto `ESTAC-006` (C3.3), saída na tolerância 15:00 com valor 0 e sem pagamento (C3.4), fronteiras 60:00/60:01 e 90:00/90:01 (C3.5, C3.6), teto da permanência de 10h do seed R$ 45,00 (C3.7), ticket perdido R$ 60,00 com `ticket_perdido=t` (C3.8), saída dupla `ESTAC-002` (C3.9) e tipo incompatível `ESTAC-004` (C3.10).
+
 ## Estrutura
 
 ```text
@@ -372,5 +488,5 @@ catálogo: trg_permanencia_valida (BEFORE INSERT OR UPDATE) e trg_permanencia_au
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
 2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
-3. Frente C: procedures (C1 concluída), triggers, app Java e suíte JUnit.
+3. Frente C: procedures (C1), triggers (C2) e testes manuais de lógica (C3) concluídos; faltam testes JUnit de procedures/triggers/concorrência (C4), app Java (C5), Docker da aplicação/testes (C6) e README/IA da aplicação (C7).
 4. Frente D: README final, log de IA, tag, zip e apresentação.
