@@ -19,12 +19,14 @@ Sistema de banco de dados para um estacionamento rotativo fictício com **100 va
 
 ## Como rodar
 
-Pré-requisito: Docker com Compose.
+Pré-requisito: Docker com Compose (Docker Desktop no Windows/WSL). No WSL desta máquina, use `docker.exe`; se a porta 5432 estiver ocupada, prefixe com `WSLENV=PG_PORT PG_PORT=5433`.
 
 ```bash
-docker compose down -v      # apaga o volume e força a reinicialização
-docker compose up -d --wait # sobe o PostgreSQL e roda o init
-docker compose run --rm testes # suíte JUnit (Frente A em diante)
+docker compose down -v                # apaga o volume e força a reinicialização
+docker compose up -d --wait           # sobe o PostgreSQL e roda o init
+docker compose run --rm testes        # suíte JUnit (build + mvn test)
+docker compose --profile apps run --rm app   # demo da aplicação Java (ROLLBACK padrão)
+docker compose --profile apps run --rm app -- --efetivar  # demo com COMMIT
 ```
 
 Conferir o banco:
@@ -483,7 +485,15 @@ Testes em `app/src/test/java/br/estacionamento/`: `ProcedureTest.java` (7), `Tri
 
 ## Aplicação Java (C5)
 
-Arquivo: `app/src/main/java/br/estacionamento/App.java`. O `pom.xml` usa Java 21, driver PostgreSQL 42.7.4, JUnit 5 e `maven-shade-plugin` para gerar fat JAR (`target/estacionamento-rotativo-1.0.0.jar`). A aplicação usa `autoCommit=false`, `PreparedStatement` com bind, `CallableStatement` com `escapeSyntaxCallMode=callIfNoReturn`, `Savepoint` antes de cada chamada/procedure e `BigDecimal` para valores monetários; erros de negócio são traduzidos pelo prefixo `ESTAC-00x`. Por padrão faz `ROLLBACK`; com `--efetivar` faz `COMMIT`.
+Arquivo: `app/src/main/java/br/estacionamento/App.java`. O `pom.xml` usa Java 21, driver PostgreSQL 42.7.4, JUnit 5 e `maven-shade-plugin` para gerar fat JAR (`target/estacionamento-rotativo-1.0.0.jar`). Por padrão faz `ROLLBACK`; com `--efetivar` faz `COMMIT`.
+
+### Decisões de JDBC
+
+- **`autoCommit=false`**: a aplicação controla a transação; procedures não fazem `COMMIT` (decisions.md §4), então o `commit/rollback` fica no chamador.
+- **`PreparedStatement` + bind**: todas as consultas de leitura usam parâmetros (`?`), nunca concatenação de valores, evitando SQL injection e mantendo tipos.
+- **`CallableStatement` + `escapeSyntaxCallMode=callIfNoReturn`**: chamadas `CALL registrar_entrada(...)` e `CALL registrar_saida(...)` via JDBC; a propriedade `escapeSyntaxCallMode=callIfNoReturn` evita o tratamento de função/retorno do PostgreSQL para procedures.
+- **`Savepoint` antes de cada chamada**: em PostgreSQL, erro aborta a transação; antes de cada operação de demo a app cria um savepoint e faz `rollback(sp)` em caso de `ESTAC-00x`, permitindo capturar o erro de negócio e continuar o roteiro.
+- **`BigDecimal` para dinheiro**: valores `NUMERIC(10,2)` são lidos/escritos como `BigDecimal`, evitando arredondamento binário de `double/float`.
 
 **Saída real** (`WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --entrypoint bash testes -lc "mvn -B -q -DskipTests package && java -jar target/estacionamento-rotativo-1.0.0.jar"`, postgres `healthy`):
 
@@ -565,6 +575,20 @@ $ docker.exe compose run --rm --build testes
 └── docker/               # init do PostgreSQL e Dockerfiles
 ```
 
+## Uso de IA
+
+Registro das interações de IA usadas nesta etapa (C3–C7), com erros reais e correções. O `decisions.md` permaneceu como fonte de verdade e não foi editado.
+
+| # | Pedido / contexto | Tipo de artefato | O que a IA gerou | Erro/limitação real | Correção aplicada |
+|---:|---|---|---|---|---|
+| 1 | Executar C3 (testes manuais psql) | Script SQL/psql + documentação README | Script de cenários C3 com transações/ROLLBACK e registro da saída real | `docker/postgres-init.sh` com CRLF quebrou o init (`env: 'bash\r': No such file or directory`) e impediu subir o banco; além disso, o script C3 usou placas inválidas (`B600C01`, formato não bate com `ck_veiculo_placa`) e um filtro `LIKE 'SEM%M1'` incompatível com as placas geradas, produzindo `INSERT 0 0` no cenário “sem vaga” | Normalizei o init para LF, corrigi as placas para o formato `^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$`, ajustei o filtro para `SEM1A%` e reexecutei até obter saída real correta |
+| 2 | Executar C4 (11 testes JUnit) | Testes JUnit Java (procedures/triggers/concorrência) | Classes `ProcedureTest`, `TriggerTest`, `ConcorrenciaTest` e execução via `docker compose run --rm testes` | `TriggerTest` fez `UPDATE ... saida = CURRENT_TIMESTAMP` na mesma transação do INSERT, violando `ck_permanencia_saida` porque `CURRENT_TIMESTAMP` é constante na transação; também houve erros de compilação por `assertDecimal` com aridade errada e falta de import de `assertFalse` | Troquei para `saida = entrada + INTERVAL '1 minute'`, corrigi assinaturas/imports e reexecutei: `Tests run: 25, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS` |
+| 3 | Executar C5 (aplicação Java) | Código Java + Maven (fat JAR) | `App.java` com demo JDBC e `pom.xml` com `maven-shade-plugin` | Risco de não atender critérios do decisions: era necessário garantir `autoCommit=false`, bind, `CallableStatement` com `escapeSyntaxCallMode=callIfNoReturn`, `Savepoint`, `BigDecimal` e tradução `ESTAC-00x` | Implementei os requisitos explicitamente, empacotei o fat JAR e executei o demo real com ROLLBACK padrão, capturando a saída completa |
+| 4 | Executar C6 (Docker app/testes) | Dockerfiles + Docker Compose | `Dockerfile.app` multi-stage, ajuste do `docker-compose.yml` com serviço `app` (profile `apps`) | Ambiente com porta 5432 ocupada e comando compose sem `PG_PORT` tentou recriar postgres em 5432; também foi necessário validar que comandos com profile/dependência funcionavam no contexto real | Subi com `WSLENV=PG_PORT PG_PORT=5433`, validei `docker compose --profile apps run --rm --build app` e `docker compose run --rm --build testes` com saídas reais |
+| 5 | Executar C7 (README/IA) | Documentação README/atividades | Atualização de instruções de execução, decisões de JDBC, saída do app e registro de Uso de IA | Risco de documentação incompleta/falsa (inventar tempos, omitir erros reais ou deixar README sem comandos reproduzíveis) | Registrei apenas saídas/comandos executados, incluí erros reais com correção e mantive `decisions.md` sem edição |
+
+**Reflexão:** a IA acelerou a escrita de scripts, testes e documentação, mas os erros mais úteis apareceram na execução real: line ending do init, dados inválidos no teste manual, restrição de `CURRENT_TIMESTAMP` na mesma transação e conflito de porta no ambiente. O fluxo confiável foi: ler `decisions.md/AGENTS/atividades`, implementar, executar no Docker, corrigir o erro observado e registrar a saída real.
+
 ## Documentos de trabalho
 
 - [`config.md`](config.md) — o que precisa estar instalado no computador para rodar o projeto (Docker, Git, portas, recursos).
@@ -575,5 +599,5 @@ $ docker.exe compose run --rm --build testes
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
 2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
-3. Frente C: procedures (C1), triggers (C2), testes manuais de lógica (C3), testes JUnit de procedures/triggers/concorrência (C4), aplicação Java (C5) e Docker da aplicação/testes (C6) concluídos; falta README/IA da aplicação (C7).
+3. Frente C (concluída): procedures (C1), triggers (C2), testes manuais de lógica (C3), testes JUnit de procedures/triggers/concorrência (C4), aplicação Java (C5), Docker da aplicação/testes (C6) e README/IA da aplicação (C7).
 4. Frente D: README final, log de IA, tag, zip e apresentação.
