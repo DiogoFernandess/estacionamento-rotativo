@@ -134,11 +134,12 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Vicente
 
 ### B4. Três índices
-- [ ] `04_indices.sql` com `idx_permanencia_veiculo`, `idx_permanencia_vaga_entrada` e `idx_permanencia_status_entrada`.
-- [ ] Conferir no catálogo que os índices existem e nas colunas certas.
+- [x] `04_indices.sql` com `idx_permanencia_veiculo`, `idx_permanencia_vaga_entrada` e `idx_permanencia_status_entrada`.
+- [x] Conferir no catálogo que os índices existem e nas colunas certas.
 - **Pronto quando:** os 3 índices existem no banco criado do zero.
+- **Saída real:** projeto Compose separado (`estacionamento-b4`, porta 5434, volume próprio) → `UP_EXIT=0`, `[init] concluído.` e 3 índices no catálogo com as colunas pedidas; suíte nesse banco `TESTES_EXIT=0` (`14` testes, `BUILD SUCCESS`). Aplicados também no banco compartilhado (`APLICAR_EXIT=0`) e projeto temporário removido (`DOWN_EXIT=0`). Detalhes no README.
 - **Depende de:** A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B5. Massa de dados e medição
 - [ ] `performance/medir.sql` cria esquema separado com 100k+ permanências e pagamentos.
