@@ -216,6 +216,25 @@ Resultados reais da subida com dados semeados em 24/11/2026 e consultas executad
 
 Conferência de consistência: as receitas de Q02 (232,00 no mês corrente), Q06 (347,00 no total) e Q10 (347,00) batem com a soma dos pagamentos; Q08 (13 + 2 + 2) cobre as 17 permanências fechadas.
 
+### Resultados esperados calculados à mão (B2)
+
+Derivação a partir do seed, antes de comparar com a saída real do B1. Seja `S` o dia da subida; as permanências antigas usam `S-1` a `S-5` e as do mês anterior usam o dia 1 do mês corrente menos 10 dias. Valores em R$.
+
+| Consulta | Conta feita à mão | Esperado |
+|---|---|---|
+| Q01 | 100 vagas `C` ativas; abertas `C010`–`C019` = 10. 20 vagas `M` ativas; abertas `M009`–`M012` = 4. | CARRO 100/10/90/10,00%; MOTO 20/4/16/20,00%. |
+| Q02 | `S-5`: M005 11 + M006 14 = 25. `S-4`: C005 16 + C006 20 = 36. `S-3`: C003 12 + C004 16 + M003 8 + M004 11 = 47. `S-2`: C002 12 + M002 8 = 20 (C001/M001 valem 0 e não pagam). `S-1`: C007 44 + C009 60 = 104. Os 115,00 do mês anterior ficam fora da janela de 29 dias. | 5 dias: 25, 36, 47, 20, 104; acumulado 25, 61, 108, 128, 232. |
+| Q03 | Gastos: 60 (C009), 45 (C008), 44 (C007), 40 (M008), 30 (M007), 20 (C006), 16 (C004), 16 (C005), 14 (M006), 12 (C002), 12 (C003), 11 (M004), 11 (M005), 8 (M002), 8 (M003). ABC1D23 e MOT1A23 não pagaram e não entram. `RANK()` empata 16 na posição 7 e 12 na posição 10. | 11 linhas com `posicao <= 10`, incluindo as duas placas de 12,00 na posição 10. |
+| Q04 | Carro: (15 + 15,0167 + 45 + 60 + 60,0167 + 90 + 90,0167 + 300 + 300,0167)/9 = 975,0667/9. Moto: (15 + 15,0167 + 45 + 60 + 60,0167 + 90 + 90,0167 + 300)/8 = 675,05/8. | CARRO média 108,34, mín. 15,00, máx. 300,02 (5h00:01); MOTO média 84,38, mín. 15,00, máx. 300,00 (5h00:00). |
+| Q05 | 17 permanências fechadas com saída não nula + 14 abertas = 31 entradas; 17 saídas. Fechadas: 06h 1 entrada; 08h 5 entradas/4 saídas; 09h 5/0; 10h 2/4; 11h 2/3; 12h ≥1/3; 13h 0/1; 14h ≥1/2. A hora das 14 abertas depende de `S`, então o teste forte é a soma. | Soma entradas 31, soma saídas 17; horas com movimento de 6 a 22. |
+| Q06 | Carro: DINHEIRO 12+16+60=88, PIX 12+20+45=77, CARTAO 16+44=60. Moto: DINHEIRO 8+14=22, PIX 8+11+40=59, CARTAO 11+30=41. Total 88+22+77+59+60+41 = 347. | DINHEIRO 110,00 (31,70%); PIX 136,00 (39,19%); CARTAO 101,00 (29,11%). |
+| Q07 | 120 vagas ativas menos 31 com permanência (C001–C019 e M001–M012) = 89. | 89 linhas: C020–C100 (81) e M013–M020 (8); inclui C100 e M020. |
+| Q08 | 15:00 exatamente é tolerância (C001 e M001, valor 0); ticket perdido sobrepõe o tempo (C009 60 e M008 40); os outros 13 são cobrados. 2+2+13 = 17. | TOLERANCIA 2/0,00; TICKET_PERDIDO 2/100,00; COBRADO 13/247,00. |
+| Q09 | Mês anterior: C008 45 + M007 30 + M008 40 = 115. Mês da subida: 347 − 115 = 232. Variação = (232−115)/115×100. | 115,00 com anterior/variação `NULL`; 232,00 com anterior 115,00 e variação 101,74%. |
+| Q10 | Carro: DINHEIRO 88, PIX 77, CARTAO 60 → subtotal 225. Moto: DINHEIRO 22, PIX 59, CARTAO 41 → subtotal 122. 225 + 122 = 347. | 6 células de tipo/forma, 2 subtotais (`forma` NULL) e 1 total geral (`tipo` e `forma` NULL = 347,00). |
+
+Os números acima são os mesmos obtidos na execução real do B1; Q02 e Q09 dependem da data da subida porque o seed usa `CURRENT_DATE`/`CURRENT_TIMESTAMP`.
+
 ## Estrutura
 
 ```text
