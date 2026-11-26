@@ -265,6 +265,22 @@ idx_permanencia_veiculo        | CREATE INDEX idx_permanencia_veiculo ON public.
 
 Suíte no mesmo banco limpo: `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`. Os índices também foram aplicados no banco de laboratório compartilhado (`APLICAR_EXIT=0`, 3 `CREATE INDEX`, catálogo idêntico); o projeto temporário foi removido com `down -v` (`DOWN_EXIT=0`).
 
+### Massa de dados e medição (B5)
+
+Artefatos: [`performance/medir.sql`](performance/medir.sql) e [`performance/explain_antes_depois.txt`](performance/explain_antes_depois.txt). O script cria o esquema isolado `medicao` com as 7 tabelas do modelo (sem FKs/CHECKs, só para medição), copia 2 tipos/120 vagas/2 tarifas do `public` e gera **132.000 permanências** (120.000 `FECHADA` + 12.000 `ABERTA`) e **120.000 pagamentos**. Inserções usam `NOT EXISTS` e o script termina com `ANALYZE` para o planejador ter estatísticas reais.
+
+Medição feita em projeto Compose separado (`estacionamento-b5`, porta 5434, volume próprio), sem criar/derrubar índice no `public`: `UP_EXIT=0`, `MEDIR_EXIT=0` (`132000 | 120000 | 120`); consultas Q01, Q07 e Q08 extraídas de `03_consultas.sql` por `@Qnn` e executadas com `SET search_path TO medicao, public;` e `EXPLAIN (ANALYZE, BUFFERS)`. Depois do plano "antes", os três índices foram criados **somente em `medicao`** e o plano "depois" foi capturado novamente; `public` continuou com 3 índices e 7 tabelas, e a suíte JUnit nesse banco deu `14` testes/`BUILD SUCCESS`. Projeto temporário removido (`DOWN_EXIT=0`).
+
+| Consulta | Antes | Depois |
+|---|---|---|
+| Q01 | `Seq Scan on permanencia`, 17,561 ms | `Bitmap Index Scan` em `idx_permanencia_status_entrada`, 10,329 ms |
+| Q07 | `Seq Scan on permanencia` no anti-join, 1,356 ms | `Index Only Scan` em `idx_permanencia_vaga_entrada` (`Heap Fetches: 0`), 1,345 ms |
+| Q08 | `Seq Scan on permanencia`, 74,748 ms | `Seq Scan on permanencia`, 70,467 ms (sem mudança de plano) |
+
+Q08 não mudou de plano porque `status = 'FECHADA'` seleciona 120.000 de 132.000 linhas (~90,9%): baixa seletividade. `idx_permanencia_veiculo` foi criado, mas nenhuma das três consultas medidas o usou. Os planos completos, com `Buffers` e tempos reais, estão em `explain_antes_depois.txt`; nenhum tempo foi estimado ou inventado.
+
+Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para `1000` e estourava `uk_medicao_veiculo_placa`; trocado por `'VE' || lpad(g::text, 5, '0')` (7 caracteres), após o que o `medir.sql` rodou com `MEDIR_EXIT=0`.
+
 ## Estrutura
 
 ```text
@@ -293,6 +309,6 @@ Suíte no mesmo banco limpo: `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Error
 ## Próximos passos
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
-2. Frente B (em andamento): consultas, resultados esperados, testes JUnit e índices concluídos (B1–B4); falta massa de dados e `EXPLAIN` antes/depois.
+2. Frente B (em andamento): consultas, resultados esperados, testes JUnit, índices e medição concluídos (B1–B5); falta documentar o antes/depois (B6).
 3. Frente C: procedures/triggers, app Java e suíte JUnit.
 4. Frente D: README final, log de IA, tag, zip e apresentação.

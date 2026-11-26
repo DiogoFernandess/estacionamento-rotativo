@@ -1,0 +1,225 @@
+=====================================================================
+Estacionamento Rotativo Central — EXPLAIN ANALYZE antes/depois (B5)
+Data da medição: 2026-11-25
+=====================================================================
+Objeto: 3 consultas extraídas de postgresql/03_consultas.sql pelos
+marcadores @Q01, @Q07 e @Q08, executadas com:
+  SET search_path TO medicao, public;
+  EXPLAIN (ANALYZE, BUFFERS) <consulta>;
+
+Ambiente isolado (não mexe no esquema public):
+  docker compose -p estacionamento-b5 up -d --wait   (PG_PORT=5434, volume próprio)
+  psql -v ON_ERROR_STOP=1 -f /tmp/medir.sql          -> 132000 permanencias, 120000 pagamentos, 120 vagas
+  psql -f /tmp/explain.sql                           -> plano ANTES (medicao sem indices de performance)
+  CREATE INDEX idx_permanencia_veiculo ON medicao.permanencia (veiculo_id);
+  CREATE INDEX idx_permanencia_vaga_entrada ON medicao.permanencia (vaga_id, entrada);
+  CREATE INDEX idx_permanencia_status_entrada ON medicao.permanencia (status, entrada);
+  ANALYZE medicao.permanencia;
+  psql -f /tmp/explain_depois.sql                    -> plano DEPOIS (medicao com os 3 indices)
+
+Validação: public continuou com exatamente 3 índices idx_permanencia% e 7 tabelas;
+a suíte JUnit no mesmo banco terminou com 14 testes, 0 falhas, BUILD SUCCESS.
+Os tempos abaixo são os medidos nas execuções reais, não estimativas ou médias.
+
+Resumo (tempo de execução informado pelo próprio EXPLAIN ANALYZE):
+  Q01  ANTES Seq Scan on permanencia (17.561 ms) -> DEPOIS Bitmap Index Scan
+       em idx_permanencia_status_entrada (10.329 ms).
+  Q07  ANTES Seq Scan on permanencia no anti-join (1.356 ms) -> DEPOIS Index Only
+       Scan em idx_permanencia_vaga_entrada, Heap Fetches: 0 (1.345 ms).
+  Q08  ANTES e DEPOIS Seq Scan on permanencia (74.748 ms -> 70.467 ms).
+       Sem mudança de plano: status = 'FECHADA' seleciona 120000 de 132000
+       linhas (cerca de 90,9%), baixa seletividade. idx_permanencia_veiculo
+       foi criado, mas nenhuma das 3 consultas medidas o utilizou.
+
+---------------------------------------------------------------------
+PLANOS ANTES (medicao sem os 3 indices de performance)
+---------------------------------------------------------------------
+SET
+=== Q01 ANTES ===
+                                                                QUERY PLAN                                                                
+------------------------------------------------------------------------------------------------------------------------------------------
+ GroupAggregate  (cost=3849.92..3971.99 rows=2 width=61) (actual time=17.043..17.436 rows=2 loops=1)
+   Group Key: tv.nome
+   Buffers: shared hit=1242
+   ->  Sort  (cost=3849.92..3880.43 rows=12201 width=13) (actual time=14.779..15.217 rows=12000 loops=1)
+         Sort Key: tv.nome, va.vaga_id
+         Sort Method: quicksort  Memory: 760kB
+         Buffers: shared hit=1242
+         ->  Hash Join  (cost=4.75..3021.80 rows=12201 width=13) (actual time=7.031..10.993 rows=12000 loops=1)
+               Hash Cond: (va.tipo_id = tv.tipo_id)
+               Buffers: shared hit=1236
+               ->  Hash Right Join  (cost=3.70..2920.86 rows=12201 width=12) (actual time=7.010..9.680 rows=12000 loops=1)
+                     Hash Cond: (p.vaga_id = va.vaga_id)
+                     Buffers: shared hit=1235
+                     ->  Seq Scan on permanencia p  (cost=0.00..2884.00 rows=12201 width=8) (actual time=6.967..8.176 rows=12000 loops=1)
+                           Filter: ((status)::text = 'ABERTA'::text)
+                           Rows Removed by Filter: 120000
+                           Buffers: shared hit=1234
+                     ->  Hash  (cost=2.20..2.20 rows=120 width=8) (actual time=0.024..0.025 rows=120 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 13kB
+                           Buffers: shared hit=1
+                           ->  Seq Scan on vaga va  (cost=0.00..2.20 rows=120 width=8) (actual time=0.004..0.011 rows=120 loops=1)
+                                 Filter: ativa
+                                 Buffers: shared hit=1
+               ->  Hash  (cost=1.02..1.02 rows=2 width=9) (actual time=0.008..0.009 rows=2 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                     Buffers: shared hit=1
+                     ->  Seq Scan on tipo_veiculo tv  (cost=0.00..1.02 rows=2 width=9) (actual time=0.004..0.005 rows=2 loops=1)
+                           Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=185 read=1
+ Planning Time: 0.565 ms
+ Execution Time: 17.561 ms
+(32 rows)
+
+=== Q07 ANTES ===
+                                                                    QUERY PLAN                                                                    
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=0.14..3480.75 rows=1 width=10) (actual time=1.334..1.335 rows=0 loops=1)
+   Join Filter: (tv.tipo_id = va.tipo_id)
+   Buffers: shared hit=255
+   ->  Nested Loop Anti Join  (cost=0.14..3479.71 rows=1 width=9) (actual time=1.334..1.335 rows=0 loops=1)
+         Join Filter: (p.vaga_id = va.vaga_id)
+         Rows Removed by Join Filter: 7140
+         Buffers: shared hit=255
+         ->  Index Scan using uk_medicao_vaga_codigo on vaga va  (cost=0.14..13.94 rows=120 width=13) (actual time=0.007..0.043 rows=120 loops=1)
+               Filter: ativa
+               Buffers: shared hit=2
+         ->  Seq Scan on permanencia p  (cost=0.00..2554.00 rows=132000 width=4) (actual time=0.001..0.004 rows=60 loops=120)
+               Buffers: shared hit=253
+   ->  Seq Scan on tipo_veiculo tv  (cost=0.00..1.02 rows=2 width=9) (never executed)
+ Planning:
+   Buffers: shared hit=15
+ Planning Time: 0.312 ms
+ Execution Time: 1.356 ms
+(17 rows)
+
+=== Q08 ANTES ===
+                                                                                                          QUERY PLAN                                                                                                          
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=7495.31..7528.31 rows=13200 width=72) (actual time=74.655..74.684 rows=1 loops=1)
+   Sort Key: (CASE WHEN p.ticket_perdido THEN 'TICKET_PERDIDO'::text WHEN ((EXTRACT(epoch FROM (p.saida - p.entrada)) / '60'::numeric) <= (t.tolerancia_min)::numeric) THEN 'TOLERANCIA'::text ELSE 'COBRADO'::text END)
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=1235
+   ->  HashAggregate  (cost=6261.88..6591.88 rows=13200 width=72) (actual time=74.641..74.671 rows=1 loops=1)
+         Group Key: CASE WHEN p.ticket_perdido THEN 'TICKET_PERDIDO'::text WHEN ((EXTRACT(epoch FROM (p.saida - p.entrada)) / '60'::numeric) <= (t.tolerancia_min)::numeric) THEN 'TOLERANCIA'::text ELSE 'COBRADO'::text END
+         Batches: 1  Memory Usage: 409kB
+         Buffers: shared hit=1235
+         ->  Hash Join  (cost=1.04..5363.39 rows=119799 width=36) (actual time=0.029..53.566 rows=120000 loops=1)
+               Hash Cond: (p.tarifa_id = t.tarifa_id)
+               Buffers: shared hit=1235
+               ->  Seq Scan on permanencia p  (cost=0.00..2884.00 rows=119799 width=25) (actual time=0.005..12.632 rows=120000 loops=1)
+                     Filter: ((status)::text = 'FECHADA'::text)
+                     Rows Removed by Filter: 12000
+                     Buffers: shared hit=1234
+               ->  Hash  (cost=1.02..1.02 rows=2 width=8) (actual time=0.004..0.031 rows=2 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                     Buffers: shared hit=1
+                     ->  Seq Scan on tarifa t  (cost=0.00..1.02 rows=2 width=8) (actual time=0.002..0.028 rows=2 loops=1)
+                           Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=85 read=4
+ Planning Time: 0.418 ms
+ Execution Time: 74.748 ms
+(24 rows)
+
+
+---------------------------------------------------------------------
+PLANOS DEPOIS (medicao com os 3 indices de performance)
+---------------------------------------------------------------------
+SET
+=== Q01 DEPOIS ===
+                                                                               QUERY PLAN                                                                                
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ GroupAggregate  (cost=2482.90..2604.17 rows=2 width=61) (actual time=9.826..10.193 rows=2 loops=1)
+   Group Key: tv.nome
+   Buffers: shared hit=121 read=12
+   ->  Sort  (cost=2482.90..2513.20 rows=12122 width=13) (actual time=7.755..8.147 rows=12000 loops=1)
+         Sort Key: tv.nome, va.vaga_id
+         Sort Method: quicksort  Memory: 760kB
+         Buffers: shared hit=121 read=12
+         ->  Hash Join  (cost=142.99..1660.70 rows=12122 width=13) (actual time=0.307..4.024 rows=12000 loops=1)
+               Hash Cond: (va.tipo_id = tv.tipo_id)
+               Buffers: shared hit=115 read=12
+               ->  Hash Right Join  (cost=141.94..1560.41 rows=12122 width=12) (actual time=0.289..2.694 rows=12000 loops=1)
+                     Hash Cond: (p.vaga_id = va.vaga_id)
+                     Buffers: shared hit=114 read=12
+                     ->  Bitmap Heap Scan on permanencia p  (cost=138.24..1523.77 rows=12122 width=8) (actual time=0.246..1.045 rows=12000 loops=1)
+                           Recheck Cond: ((status)::text = 'ABERTA'::text)
+                           Heap Blocks: exact=113
+                           Buffers: shared hit=113 read=12
+                           ->  Bitmap Index Scan on idx_permanencia_status_entrada  (cost=0.00..135.21 rows=12122 width=0) (actual time=0.223..0.224 rows=12000 loops=1)
+                                 Index Cond: ((status)::text = 'ABERTA'::text)
+                                 Buffers: shared read=12
+                     ->  Hash  (cost=2.20..2.20 rows=120 width=8) (actual time=0.031..0.032 rows=120 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 13kB
+                           Buffers: shared hit=1
+                           ->  Seq Scan on vaga va  (cost=0.00..2.20 rows=120 width=8) (actual time=0.004..0.012 rows=120 loops=1)
+                                 Filter: ativa
+                                 Buffers: shared hit=1
+               ->  Hash  (cost=1.02..1.02 rows=2 width=9) (actual time=0.008..0.008 rows=2 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                     Buffers: shared hit=1
+                     ->  Seq Scan on tipo_veiculo tv  (cost=0.00..1.02 rows=2 width=9) (actual time=0.004..0.004 rows=2 loops=1)
+                           Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=247 read=6
+ Planning Time: 0.746 ms
+ Execution Time: 10.329 ms
+(35 rows)
+
+=== Q07 DEPOIS ===
+                                                                               QUERY PLAN                                                                                
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=45.41..45.41 rows=1 width=10) (actual time=1.329..1.330 rows=0 loops=1)
+   Sort Key: va.codigo
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=124 read=118
+   ->  Nested Loop  (cost=0.42..45.40 rows=1 width=10) (actual time=1.327..1.327 rows=0 loops=1)
+         Buffers: shared hit=124 read=118
+         ->  Nested Loop Anti Join  (cost=0.29..45.07 rows=1 width=9) (actual time=1.326..1.327 rows=0 loops=1)
+               Buffers: shared hit=124 read=118
+               ->  Seq Scan on vaga va  (cost=0.00..2.20 rows=120 width=13) (actual time=0.005..0.021 rows=120 loops=1)
+                     Filter: ativa
+                     Buffers: shared hit=1
+               ->  Index Only Scan using idx_permanencia_vaga_entrada on permanencia p  (cost=0.29..23.58 rows=1100 width=4) (actual time=0.011..0.011 rows=1 loops=120)
+                     Index Cond: (vaga_id = va.vaga_id)
+                     Heap Fetches: 0
+                     Buffers: shared hit=123 read=118
+         ->  Index Scan using pk_medicao_tipo_veiculo on tipo_veiculo tv  (cost=0.13..0.24 rows=1 width=9) (never executed)
+               Index Cond: (tipo_id = va.tipo_id)
+ Planning:
+   Buffers: shared hit=21
+ Planning Time: 0.216 ms
+ Execution Time: 1.345 ms
+(21 rows)
+
+=== Q08 DEPOIS ===
+                                                                                                          QUERY PLAN                                                                                                          
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=7497.53..7530.53 rows=13200 width=72) (actual time=70.358..70.361 rows=1 loops=1)
+   Sort Key: (CASE WHEN p.ticket_perdido THEN 'TICKET_PERDIDO'::text WHEN ((EXTRACT(epoch FROM (p.saida - p.entrada)) / '60'::numeric) <= (t.tolerancia_min)::numeric) THEN 'TOLERANCIA'::text ELSE 'COBRADO'::text END)
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=1235
+   ->  HashAggregate  (cost=6264.11..6594.11 rows=13200 width=72) (actual time=70.346..70.350 rows=1 loops=1)
+         Group Key: CASE WHEN p.ticket_perdido THEN 'TICKET_PERDIDO'::text WHEN ((EXTRACT(epoch FROM (p.saida - p.entrada)) / '60'::numeric) <= (t.tolerancia_min)::numeric) THEN 'TOLERANCIA'::text ELSE 'COBRADO'::text END
+         Batches: 1  Memory Usage: 409kB
+         Buffers: shared hit=1235
+         ->  Hash Join  (cost=1.04..5365.02 rows=119878 width=36) (actual time=0.056..51.175 rows=120000 loops=1)
+               Hash Cond: (p.tarifa_id = t.tarifa_id)
+               Buffers: shared hit=1235
+               ->  Seq Scan on permanencia p  (cost=0.00..2884.00 rows=119878 width=25) (actual time=0.025..12.804 rows=120000 loops=1)
+                     Filter: ((status)::text = 'FECHADA'::text)
+                     Rows Removed by Filter: 12000
+                     Buffers: shared hit=1234
+               ->  Hash  (cost=1.02..1.02 rows=2 width=8) (actual time=0.008..0.009 rows=2 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                     Buffers: shared hit=1
+                     ->  Seq Scan on tarifa t  (cost=0.00..1.02 rows=2 width=8) (actual time=0.003..0.004 rows=2 loops=1)
+                           Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=90
+ Planning Time: 0.334 ms
+ Execution Time: 70.467 ms
+(24 rows)
+
