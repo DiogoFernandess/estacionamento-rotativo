@@ -213,11 +213,12 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Felipe
 
 ### C7. README — aplicação e IA
-- [ ] Instruções de execução, saída do app, decisões de JDBC (savepoint, BigDecimal, bind).
-- [ ] Log de uso de IA com ≥5 registros, ≥4 tipos de artefato e ≥2 erros reais; reflexão.
+- [x] Instruções de execução, saída do app, decisões de JDBC (savepoint, BigDecimal, bind).
+- [x] Log de uso de IA com ≥5 registros, ≥4 tipos de artefato e ≥2 erros reais; reflexão.
 - **Pronto quando:** alguém roda o app só com o README; a tabela de IA tem erros concretos.
+- **Saída real:** README atualizado com comandos de execução (`up`, `testes`, `app`, `--efetivar`), saída real do app C5, seção “Decisões de JDBC” (autoCommit, PreparedStatement/bind, CallableStatement+`escapeSyntaxCallMode=callIfNoReturn`, Savepoint, BigDecimal) e seção “Uso de IA” com 5 registros, 5 tipos de artefato e erros reais corrigidos (CRLF no init, placas/filtro inválidos no script C3, violação `ck_permanencia_saida` por `CURRENT_TIMESTAMP` na mesma transação, erros de compilação JUnit, conflito de porta 5432).
 - **Depende de:** C5, C6
-- **Dono:** ______
+- **Dono:** Felipe
 
 ## Frente D — Integração e entrega (compartilhada)
 
