@@ -481,6 +481,54 @@ Testes em `app/src/test/java/br/estacionamento/`: `ProcedureTest.java` (7), `Tri
 [INFO] BUILD SUCCESS
 ```
 
+## Aplicação Java (C5)
+
+Arquivo: `app/src/main/java/br/estacionamento/App.java`. O `pom.xml` usa Java 21, driver PostgreSQL 42.7.4, JUnit 5 e `maven-shade-plugin` para gerar fat JAR (`target/estacionamento-rotativo-1.0.0.jar`). A aplicação usa `autoCommit=false`, `PreparedStatement` com bind, `CallableStatement` com `escapeSyntaxCallMode=callIfNoReturn`, `Savepoint` antes de cada chamada/procedure e `BigDecimal` para valores monetários; erros de negócio são traduzidos pelo prefixo `ESTAC-00x`. Por padrão faz `ROLLBACK`; com `--efetivar` faz `COMMIT`.
+
+**Saída real** (`WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --entrypoint bash testes -lc "mvn -B -q -DskipTests package && java -jar target/estacionamento-rotativo-1.0.0.jar"`, postgres `healthy`):
+
+```text
+=== Demo Estacionamento Rotativo Central ===
+autoCommit=false | modo=ROLLBACK
+
+1) Consulta de vagas livres por tipo (PreparedStatement + bind)
+   - CARRO: 90 vagas livres
+   - MOTO: 16 vagas livres
+
+2) Entrada feliz (CallableStatement)
+   OK permanencia=144 placa=APP1A01 vaga=C001 status=ABERTA valor=0.00
+
+3) Consulta permanências abertas (PreparedStatement + bind)
+   - #18 placa=QRS1A11 tipo=CARRO vaga=C010 entrada=2026-11-26 12:46:29.451021
+   - #27 placa=QRS0J10 tipo=CARRO vaga=C019 entrada=2026-11-26 14:46:29.451021
+   - #31 placa=XYZ4N44 tipo=MOTO vaga=M012 entrada=2026-11-26 15:46:29.451021
+   - #26 placa=QRS9I99 tipo=CARRO vaga=C018 entrada=2026-11-26 16:46:29.451021
+   - #25 placa=QRS8H88 tipo=CARRO vaga=C017 entrada=2026-11-26 17:46:29.451021
+   - #24 placa=QRS7G77 tipo=CARRO vaga=C016 entrada=2026-11-26 18:46:29.451021
+   - #23 placa=QRS6F66 tipo=CARRO vaga=C015 entrada=2026-11-26 19:46:29.451021
+   - #30 placa=XYZ3M33 tipo=MOTO vaga=M011 entrada=2026-11-26 20:46:29.451021
+   - #22 placa=QRS5E55 tipo=CARRO vaga=C014 entrada=2026-11-26 20:46:29.451021
+   - #21 placa=QRS4D44 tipo=CARRO vaga=C013 entrada=2026-11-26 21:46:29.451021
+   - #29 placa=XYZ2L22 tipo=MOTO vaga=M010 entrada=2026-11-26 22:01:29.451021
+   - #20 placa=QRS3C33 tipo=CARRO vaga=C012 entrada=2026-11-26 22:16:29.451021
+   - #28 placa=XYZ1K11 tipo=MOTO vaga=M009 entrada=2026-11-26 22:26:29.451021
+   - #19 placa=QRS2B22 tipo=CARRO vaga=C011 entrada=2026-11-26 22:31:29.451021
+   - #144 placa=APP1A01 tipo=CARRO vaga=C001 entrada=2026-11-26 23:11:06.082466
+   Permanência de 10h selecionada: #18
+
+4) Saída da permanência de 10h (teto R$ 45,00)
+   OK status=FECHADA valor=45.00 forma=PIX pagamento=45.00
+
+5) Saída repetida (esperado ESTAC-002)
+   ERRO DE NEGÓCIO CAPTURADO: ESTAC-002: permanência inexistente ou já fechada: 18 [SQLState=P0001]
+
+6) Tipo incompatível (esperado ESTAC-004)
+   ERRO DE NEGÓCIO CAPTURADO: ESTAC-004: veículo XYZ1K11 é do tipo MOTO, não CARRO [SQLState=P0001]
+
+[TX] ROLLBACK efetuado (padrão). Use --efetivar para persistir.
+[INFO] Permanência de entrada feliz no demo: 144
+```
+
 ## Estrutura
 
 ```text
@@ -510,5 +558,5 @@ Testes em `app/src/test/java/br/estacionamento/`: `ProcedureTest.java` (7), `Tri
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
 2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
-3. Frente C: procedures (C1), triggers (C2), testes manuais de lógica (C3) e testes JUnit de procedures/triggers/concorrência (C4) concluídos; faltam app Java (C5), Docker da aplicação/testes (C6) e README/IA da aplicação (C7).
+3. Frente C: procedures (C1), triggers (C2), testes manuais de lógica (C3), testes JUnit de procedures/triggers/concorrência (C4) e aplicação Java (C5) concluídos; faltam Docker da aplicação/testes (C6) e README/IA da aplicação (C7).
 4. Frente D: README final, log de IA, tag, zip e apresentação.

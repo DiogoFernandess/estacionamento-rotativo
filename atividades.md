@@ -196,12 +196,13 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Felipe
 
 ### C5. Aplicação Java
-- [ ] `app/pom.xml` com Java 21, driver PostgreSQL e JUnit 5; fat JAR.
-- [ ] Consulta com bind, `CallableStatement` com `escapeSyntaxCallMode=callIfNoReturn`, `Savepoint`, `BigDecimal`, `autoCommit=false`.
-- [ ] Demo: vagas livres, entrada, saída da permanência de 10h (R$ 45), saída repetida (`ESTAC-002`), tipo incompatível (`ESTAC-004`), rollback/`--efetivar`.
+- [x] `app/pom.xml` com Java 21, driver PostgreSQL e JUnit 5; fat JAR.
+- [x] Consulta com bind, `CallableStatement` com `escapeSyntaxCallMode=callIfNoReturn`, `Savepoint`, `BigDecimal`, `autoCommit=false`.
+- [x] Demo: vagas livres, entrada, saída da permanência de 10h (R$ 45), saída repetida (`ESTAC-002`), tipo incompatível (`ESTAC-004`), rollback/`--efetivar`.
 - **Pronto quando:** o app roda e mostra o roteiro completo com o erro de negócio tratado.
+- **Saída real:** `WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --entrypoint bash testes -lc "mvn -B -q -DskipTests package && java -jar target/estacionamento-rotativo-1.0.0.jar"` (postgres `healthy`) executou o demo completo: `autoCommit=false`; vagas livres por tipo com bind (CARRO 90, MOTO 16); entrada feliz `APP1A01` → permanência 144, vaga `C001`; consulta de permanências abertas com bind e seleção da 10h (#18, `QRS1A11`); saída da #18 → `FECHADA valor=45.00 forma=PIX pagamento=45.00`; saída repetida → `ESTAC-002`; tipo incompatível (`XYZ1K11` como CARRO) → `ESTAC-004`; final com `ROLLBACK` por padrão (`--efetivar` faz COMMIT).
 - **Depende de:** C1
-- **Dono:** ______
+- **Dono:** Felipe
 
 ### C6. Docker da aplicação e dos testes
 - [ ] `Dockerfile.app` (build Maven + runtime JRE) e `Dockerfile.testes` (Maven).
