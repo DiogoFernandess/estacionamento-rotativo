@@ -109,49 +109,55 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 ## Frente B — Consultas e desempenho (14 pts)
 
 ### B1. As 10 consultas
-- [ ] Implementar Q01–Q10 exatamente conforme `decisions.md`, cada uma com `-- @Qnn` e `;`.
-- [ ] Garantir 2+ JOIN, 2+ window, 2+ agregação, 1 anti-join e 1 ROLLUP.
-- [ ] Rodar cada consulta e colar o resultado real.
+- [x] Implementar Q01-Q10 exatamente conforme `decisions.md`, cada uma com `-- @Qnn` e `;`.
+- [x] Garantir 2+ JOIN, 2+ window, 2+ agregação, 1 anti-join e 1 ROLLUP.
+- [x] Rodar cada consulta e colar o resultado real.
 - **Pronto quando:** `03_consultas.sql` executa inteiro no banco e devolve os resultados esperados.
+- **Saída real:** `psql -f 03_consultas.sql` com `ON_ERROR_STOP=1` → `PSQL_EXIT=0`, 10 consultas sem erro. Q01 = 10/100 e 4/20; Q02 = 5 dias e acumulado 232,00; Q03 = 11 linhas (empate); Q05 = 31 entradas e 17 saídas; Q06/Q10 = 347,00; Q07 = 89 vagas (C020–C100, M013–M020); Q08 = 13/2/2; Q09 = 115,00 → 232,00 (101,74%). Resultados completos no README.
 - **Depende de:** A3
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B2. Resultados esperados
-- [ ] Calcular à mão os resultados das 10 consultas a partir do seed.
-- [ ] Registrar os valores no README ou na suíte de testes.
+- [x] Calcular à mão os resultados das 10 consultas a partir do seed.
+- [x] Registrar os valores no README ou na suíte de testes.
 - **Pronto quando:** cada consulta tem resultado esperado explícito, incluindo fronteiras (empate, 15 min, lost ticket, ROLLUP).
+- **Saída real:** README com a derivação de Q01–Q10 a partir do seed (somas por dia, ranking com empate na posição 10, 15:00 vs 15:01 e 5h00:00 vs 5h00:01, ticket perdido, 6 células + 2 subtotais + total do ROLLUP); valores conferidos com a execução real do B1.
 - **Depende de:** B1
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B3. Testes das consultas (JUnit)
-- [ ] 10 testes, um por `@Qnn`, lendo `postgresql/03_consultas.sql`.
-- [ ] Separar o arquivo por `@Qnn` e comparar linhas/valores esperados.
+- [x] 10 testes, um por `@Qnn`, lendo `postgresql/03_consultas.sql`.
+- [x] Separar o arquivo por `@Qnn` e comparar linhas/valores esperados.
 - **Pronto quando:** os 10 passam e falham se a consulta mudar de resultado.
+- **Saída real:** `docker compose run --rm testes` → `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0` e `BUILD SUCCESS` (10 novos + 4 da A5). Cópia temporária com `WHERE va.ativa` invertido → `Failures: 2`, `BUILD FAILURE` (Q01 e Q07), arquivo original intacto. Detalhes no README.
 - **Depende de:** B1, B2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B4. Três índices
-- [ ] `04_indices.sql` com `idx_permanencia_veiculo`, `idx_permanencia_vaga_entrada` e `idx_permanencia_status_entrada`.
-- [ ] Conferir no catálogo que os índices existem e nas colunas certas.
+- [x] `04_indices.sql` com `idx_permanencia_veiculo`, `idx_permanencia_vaga_entrada` e `idx_permanencia_status_entrada`.
+- [x] Conferir no catálogo que os índices existem e nas colunas certas.
 - **Pronto quando:** os 3 índices existem no banco criado do zero.
+- **Saída real:** projeto Compose separado (`estacionamento-b4`, porta 5434, volume próprio) → `UP_EXIT=0`, `[init] concluído.` e 3 índices no catálogo com as colunas pedidas; suíte nesse banco `TESTES_EXIT=0` (`14` testes, `BUILD SUCCESS`). Aplicados também no banco compartilhado (`APLICAR_EXIT=0`) e projeto temporário removido (`DOWN_EXIT=0`). Detalhes no README.
 - **Depende de:** A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B5. Massa de dados e medição
-- [ ] `performance/medir.sql` cria esquema separado com 100k+ permanências e pagamentos.
-- [ ] Medir as consultas **antes** dos índices e **depois** de criá-los no esquema de teste.
-- [ ] Não criar/derrubar índices no esquema principal; não inventar tempos.
+- [x] `performance/medir.sql` cria esquema separado com 100k+ permanências e pagamentos.
+- [x] Medir as consultas **antes** dos índices e **depois** de criá-los no esquema de teste.
+- [x] Não criar/derrubar índices no esquema principal; não inventar tempos.
 - **Pronto quando:** há planos reais antes/depois para as 3 consultas.
+- **Saída real:** projeto isolado `estacionamento-b5` (porta 5434) → `UP_EXIT=0`, `MEDIR_EXIT=0` (132.000 permanências, 120.000 pagamentos, 120 vagas); `EXPLAIN (ANALYZE, BUFFERS)` de Q01/Q07/Q08 antes e depois dos 3 índices criados só em `medicao`; `public` inalterado (3 índices, 7 tabelas), suíte 14/14 com `BUILD SUCCESS`, `DOWN_EXIT=0`. Planos e tempos reais em `performance/explain_antes_depois.txt` e tabela no README.
 - **Depende de:** B4
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### B6. Documento de performance
-- [ ] Salvar `performance/explain_antes_depois.txt` com os planos e tempos reais.
-- [ ] Colocar a tabela antes/depois no README.
-- [ ] Explicar o que mudou no plano (Seq Scan × Index Scan) e por que.
+- [x] Salvar `performance/explain_antes_depois.txt` com os planos e tempos reais.
+- [x] Colocar a tabela antes/depois no README.
+- [x] Explicar o que mudou no plano (Seq Scan × Index Scan) e por que.
 - **Pronto quando:** o README mostra números medidos, não estimados.
+- **Saída real:** `performance/explain_antes_depois.txt` (225 linhas) com 6 `Execution Time` reais: Q01 17,561 → 10,329 ms (`Seq Scan` → `Bitmap Index Scan` em `idx_permanencia_status_entrada`); Q07 1,356 → 1,345 ms (`Seq Scan` → `Index Only Scan` em `idx_permanencia_vaga_entrada`, `Heap Fetches: 0`); Q08 74,748 → 70,467 ms (sem mudança de plano: `FECHADA` = 90,9% das linhas). README com tabela custo/buffers/tempo e explicação de cada plano, incluindo por que `idx_permanencia_veiculo` não apareceu.
 - **Depende de:** B5
-- **Dono:** ______
+- **Dono:** Vicente
 
 ## Frente C — Procedures, triggers e aplicação (10 pts)
 

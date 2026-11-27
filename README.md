@@ -13,7 +13,7 @@ Sistema de banco de dados para um estacionamento rotativo fictício com **100 va
 - **Frente A concluída:** DER, DDL, seed com fronteiras, subida limpa, 4 testes JUnit de constraints e documentação de modelagem.
 - `decisions.md` validado e congelado para agentes/IA; o grupo só altera com justificativa registrada.
 - `docker/postgres-init.sh` executa os scripts na primeira subida do volume.
-- `03_consultas`, `04_indices` e `procedures/` ainda são placeholders; as consultas e procedures entram nas Frentes B e C.
+- `postgresql/03_consultas.sql` já contém Q01–Q10; `04_indices` e `procedures/` ainda são placeholders (Frentes B e C).
 - Subida limpa do compose validada (`down -v` + `up -d --wait` sem erro, healthcheck `healthy`) e suíte JUnit com 4/4 testes passando.
 - Serviço `testes` já disponível; serviço `app` entra na Frente C.
 
@@ -193,6 +193,103 @@ Redundâncias mantidas de propósito, todas com justificativa no modelo:
 | `auditoria_permanencia.status_antes/depois` e `valor_antes/depois` | É log temporal: guarda o que era e o que passou a ser no evento, não uma cópia substituível da linha atual. |
 | `pagamento.permanencia_id` com FK + UK | É a cardinalidade 0..1: no máximo um pagamento por permanência; valor 0 não gera pagamento (RN-09). |
 
+Não há campos de cliente, mensalidade, reserva ou status em `vaga` porque estão fora do escopo fechado em `decisions.md` §1–§3.
+
+## Consultas Q01–Q10 (B1)
+
+Arquivo: [`postgresql/03_consultas.sql`](postgresql/03_consultas.sql), com um marcador `-- @Qnn` por consulta. Execução real: `docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U estacionamento -d estacionamento -f /scripts/postgresql/03_consultas.sql` → `PSQL_EXIT=0`, 10 consultas, sem erro. Técnicas exigidas presentes: 6 consultas com JOIN, 4 funções de janela (`SUM() OVER`, `RANK() OVER`, `SUM(SUM()) OVER ()`, `LAG() OVER`), agregações em todas, `NOT EXISTS` em Q07 e `GROUP BY ROLLUP` em Q10.
+
+Resultados reais da subida com dados semeados em 24/11/2026 e consultas executadas em 25/11/2026 (datas relativas mudam com o dia da subida):
+
+| Consulta | Resultado real |
+|---|---|
+| Q01 | CARRO: total 100, ocupadas 10, livres 90, 10,00%. MOTO: total 20, ocupadas 4, livres 16, 20,00%. |
+| Q02 | 5 dias com pagamento: 19/11 R$ 25,00 (acum. 25,00); 20/11 R$ 36,00 (61,00); 21/11 R$ 47,00 (108,00); 22/11 R$ 20,00 (128,00); 23/11 R$ 104,00 (232,00). |
+| Q03 | 11 linhas (empate na posição 10): 1 ABC9E01 60,00; 2 ABC8D90 45,00; 3 ABC7D89 44,00; 4 MOT8H90 40,00; 5 MOT7G89 30,00; 6 ABC6D78 20,00; 7 ABC4D56 16,00; 7 ABC5D67 16,00; 9 MOT6F78 14,00; 10 ABC2D34 12,00; 10 ABC3D45 12,00. |
+| Q04 | CARRO: média 108,34 min, mínimo 15,00, máximo 300,02. MOTO: média 84,38 min, mínimo 15,00, máximo 300,00. |
+| Q05 | 16 horas com movimento (6–22); soma de entradas = 31 (todas as permanências) e de saídas = 17 (fechadas). |
+| Q06 | `CARTAO` R$ 101,00 (29,11%); `DINHEIRO` R$ 110,00 (31,70%); `PIX` R$ 136,00 (39,19%). Total R$ 347,00. |
+| Q07 | 89 vagas nunca utilizadas: `C020`–`C100` (81 carros) e `M013`–`M020` (8 motos), incluindo as fronteiras `C100` e `M020`. |
+| Q08 | `COBRADO` 13 / R$ 247,00; `TICKET_PERDIDO` 2 / R$ 100,00; `TOLERANCIA` 2 / R$ 0,00. |
+| Q09 | 2026-10: R$ 115,00, anterior `NULL`, variação `NULL`. 2026-11: R$ 232,00, anterior R$ 115,00, variação 101,74%. |
+| Q10 | CARRO: CARTAO 60,00 / DINHEIRO 88,00 / PIX 77,00 / subtotal 225,00. MOTO: CARTAO 41,00 / DINHEIRO 22,00 / PIX 59,00 / subtotal 122,00. Total geral 347,00. |
+
+Conferência de consistência: as receitas de Q02 (232,00 no mês corrente), Q06 (347,00 no total) e Q10 (347,00) batem com a soma dos pagamentos; Q08 (13 + 2 + 2) cobre as 17 permanências fechadas.
+
+### Resultados esperados calculados à mão (B2)
+
+Derivação a partir do seed, antes de comparar com a saída real do B1. Seja `S` o dia da subida; as permanências antigas usam `S-1` a `S-5` e as do mês anterior usam o dia 1 do mês corrente menos 10 dias. Valores em R$.
+
+| Consulta | Conta feita à mão | Esperado |
+|---|---|---|
+| Q01 | 100 vagas `C` ativas; abertas `C010`–`C019` = 10. 20 vagas `M` ativas; abertas `M009`–`M012` = 4. | CARRO 100/10/90/10,00%; MOTO 20/4/16/20,00%. |
+| Q02 | `S-5`: M005 11 + M006 14 = 25. `S-4`: C005 16 + C006 20 = 36. `S-3`: C003 12 + C004 16 + M003 8 + M004 11 = 47. `S-2`: C002 12 + M002 8 = 20 (C001/M001 valem 0 e não pagam). `S-1`: C007 44 + C009 60 = 104. Os 115,00 do mês anterior ficam fora da janela de 29 dias. | 5 dias: 25, 36, 47, 20, 104; acumulado 25, 61, 108, 128, 232. |
+| Q03 | Gastos: 60 (C009), 45 (C008), 44 (C007), 40 (M008), 30 (M007), 20 (C006), 16 (C004), 16 (C005), 14 (M006), 12 (C002), 12 (C003), 11 (M004), 11 (M005), 8 (M002), 8 (M003). ABC1D23 e MOT1A23 não pagaram e não entram. `RANK()` empata 16 na posição 7 e 12 na posição 10. | 11 linhas com `posicao <= 10`, incluindo as duas placas de 12,00 na posição 10. |
+| Q04 | Carro: (15 + 15,0167 + 45 + 60 + 60,0167 + 90 + 90,0167 + 300 + 300,0167)/9 = 975,0667/9. Moto: (15 + 15,0167 + 45 + 60 + 60,0167 + 90 + 90,0167 + 300)/8 = 675,05/8. | CARRO média 108,34, mín. 15,00, máx. 300,02 (5h00:01); MOTO média 84,38, mín. 15,00, máx. 300,00 (5h00:00). |
+| Q05 | 17 permanências fechadas com saída não nula + 14 abertas = 31 entradas; 17 saídas. Fechadas: 06h 1 entrada; 08h 5 entradas/4 saídas; 09h 5/0; 10h 2/4; 11h 2/3; 12h ≥1/3; 13h 0/1; 14h ≥1/2. A hora das 14 abertas depende de `S`, então o teste forte é a soma. | Soma entradas 31, soma saídas 17; horas com movimento de 6 a 22. |
+| Q06 | Carro: DINHEIRO 12+16+60=88, PIX 12+20+45=77, CARTAO 16+44=60. Moto: DINHEIRO 8+14=22, PIX 8+11+40=59, CARTAO 11+30=41. Total 88+22+77+59+60+41 = 347. | DINHEIRO 110,00 (31,70%); PIX 136,00 (39,19%); CARTAO 101,00 (29,11%). |
+| Q07 | 120 vagas ativas menos 31 com permanência (C001–C019 e M001–M012) = 89. | 89 linhas: C020–C100 (81) e M013–M020 (8); inclui C100 e M020. |
+| Q08 | 15:00 exatamente é tolerância (C001 e M001, valor 0); ticket perdido sobrepõe o tempo (C009 60 e M008 40); os outros 13 são cobrados. 2+2+13 = 17. | TOLERANCIA 2/0,00; TICKET_PERDIDO 2/100,00; COBRADO 13/247,00. |
+| Q09 | Mês anterior: C008 45 + M007 30 + M008 40 = 115. Mês da subida: 347 − 115 = 232. Variação = (232−115)/115×100. | 115,00 com anterior/variação `NULL`; 232,00 com anterior 115,00 e variação 101,74%. |
+| Q10 | Carro: DINHEIRO 88, PIX 77, CARTAO 60 → subtotal 225. Moto: DINHEIRO 22, PIX 59, CARTAO 41 → subtotal 122. 225 + 122 = 347. | 6 células de tipo/forma, 2 subtotais (`forma` NULL) e 1 total geral (`tipo` e `forma` NULL = 347,00). |
+
+Os números acima são os mesmos obtidos na execução real do B1; Q02 e Q09 dependem da data da subida porque o seed usa `CURRENT_DATE`/`CURRENT_TIMESTAMP`.
+
+### Testes JUnit das consultas (B3)
+
+Arquivo: [`app/src/test/java/br/estacionamento/ConsultasQ01aQ10Test.java`](app/src/test/java/br/estacionamento/ConsultasQ01aQ10Test.java). Cada teste lê `postgresql/03_consultas.sql` do disco, isola o trecho entre `-- @Qnn` e o próximo marcador, executa só aquele `SELECT` e compara linhas/valores com os resultados derivados na B2. Para Q05 (horas das abertas dependem da subida) a asserção forte é a soma: 31 entradas e 17 saídas; para Q09 as datas são comparadas com `DATE_TRUNC('month', CURRENT_DATE)` lido do próprio banco. Cada teste roda em transação com `rollback` no `@AfterEach`.
+
+O serviço `testes` monta `./postgresql` em `/scripts/postgresql:ro` para o JUnit acessar o arquivo de consultas; fora do Docker o teste procura `postgresql/03_consultas.sql` ou `../postgresql/03_consultas.sql`, e aceita override por `SQL_CONSULTAS`.
+
+Saída real: `docker compose run --rm testes` → `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0` e `BUILD SUCCESS` (10 testes novos de consulta + 4 da A5).
+
+Verificação de sensibilidade: cópia temporária do SQL com `WHERE va.ativa` trocado por `WHERE NOT va.ativa` (via `SQL_CONSULTAS`) → `Tests run: 14, Failures: 2, Errors: 0, Skipped: 0`, `BUILD FAILURE`, com falhas em `q01OcupacaoAtualPorTipo` e `q07VagasNuncaUtilizadas`. O arquivo original não foi modificado e a cópia foi removida.
+
+### Índices de performance (B4)
+
+Arquivo: [`postgresql/04_indices.sql`](postgresql/04_indices.sql), executado pelo init na ordem DDL → seed → procedures → índices. Três índices btree em `permanencia`, com `IF NOT EXISTS` para permitir reaplicação sem `DROP`. O índice único parcial `uk_permanencia_veiculo_aberta` (RN-07) continua vindo do `01_ddl.sql` e não é duplicado aqui.
+
+| Índice | Colunas | Uso previsto |
+|---|---|---|
+| `idx_permanencia_veiculo` | `(veiculo_id)` | gasto por veículo e histórico (Q03) |
+| `idx_permanencia_vaga_entrada` | `(vaga_id, entrada)` | ocupação/sobreposição por vaga (Q01, Q07) |
+| `idx_permanencia_status_entrada` | `(status, entrada)` | abertas/fechadas e duração (Q04, Q05, Q08) |
+
+Validação em banco criado do zero sem derrubar o volume compartilhado: projeto Compose separado `estacionamento-b4`, porta 5434 e volume próprio → `UP_EXIT=0`, log com `[init] executando /scripts/postgresql/04_indices.sql` e `[init] concluído.`; catálogo com exatamente 3 índices e `indexdef`:
+
+```text
+idx_permanencia_status_entrada | CREATE INDEX idx_permanencia_status_entrada ON public.permanencia USING btree (status, entrada)
+idx_permanencia_vaga_entrada   | CREATE INDEX idx_permanencia_vaga_entrada ON public.permanencia USING btree (vaga_id, entrada)
+idx_permanencia_veiculo        | CREATE INDEX idx_permanencia_veiculo ON public.permanencia USING btree (veiculo_id)
+```
+
+Suíte no mesmo banco limpo: `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`. Os índices também foram aplicados no banco de laboratório compartilhado (`APLICAR_EXIT=0`, 3 `CREATE INDEX`, catálogo idêntico); o projeto temporário foi removido com `down -v` (`DOWN_EXIT=0`).
+
+### Massa de dados e medição (B5)
+
+Artefatos: [`performance/medir.sql`](performance/medir.sql) e [`performance/explain_antes_depois.txt`](performance/explain_antes_depois.txt). O script cria o esquema isolado `medicao` com as 7 tabelas do modelo (sem FKs/CHECKs, só para medição), copia 2 tipos/120 vagas/2 tarifas do `public` e gera **132.000 permanências** (120.000 `FECHADA` + 12.000 `ABERTA`) e **120.000 pagamentos**. Inserções usam `NOT EXISTS` e o script termina com `ANALYZE` para o planejador ter estatísticas reais.
+
+Medição feita em projeto Compose separado (`estacionamento-b5`, porta 5434, volume próprio), sem criar/derrubar índice no `public`: `UP_EXIT=0`, `MEDIR_EXIT=0` (`132000 | 120000 | 120`); consultas Q01, Q07 e Q08 extraídas de `03_consultas.sql` por `@Qnn` e executadas com `SET search_path TO medicao, public;` e `EXPLAIN (ANALYZE, BUFFERS)`. Depois do plano "antes", os três índices foram criados **somente em `medicao`** e o plano "depois" foi capturado novamente; `public` continuou com 3 índices e 7 tabelas, e a suíte JUnit nesse banco deu `14` testes/`BUILD SUCCESS`. Projeto temporário removido (`DOWN_EXIT=0`).
+
+| Consulta | Antes: acesso a `permanencia` / custo / buffers / tempo | Depois: acesso a `permanencia` / custo / buffers / tempo |
+|---|---|---|
+| Q01 | `Seq Scan` (filtro `ABERTA`, 12.000 linhas, 120.000 removidas) / `0.00..2884.00` / `hit=1234` / **17,561 ms** | `Bitmap Index Scan` em `idx_permanencia_status_entrada` + `Bitmap Heap Scan` (`Heap Blocks: exact=113`) / `138.24..1523.77` / `hit=113 read=12` / **10,329 ms** |
+| Q07 | `Seq Scan` no `Nested Loop Anti Join` (estimativa 132.000 linhas, `loops=120`) / `0.14..3479.71` (anti-join) / `hit=255` / **1,356 ms** | `Index Only Scan` em `idx_permanencia_vaga_entrada` (`Index Cond: vaga_id = va.vaga_id`, `Heap Fetches: 0`) / `0.29..45.07` (anti-join) / `hit=124 read=118` / **1,345 ms** |
+| Q08 | `Seq Scan` (filtro `FECHADA`, 120.000 linhas, 12.000 removidas) / `0.00..2884.00` / `hit=1234` / **74,748 ms** | `Seq Scan` (mesmo filtro) / `0.00..2884.00` / `hit=1234` / **70,467 ms** — sem mudança de plano |
+
+Custo é a estimativa impressa pelo próprio `EXPLAIN`; buffers e tempos são da saída real. Os planos completos estão em [`performance/explain_antes_depois.txt`](performance/explain_antes_depois.txt).
+
+#### Por que os planos mudaram (B6)
+
+- **Q01 — `Seq Scan` → `Bitmap Index Scan`:** `status = 'ABERTA'` seleciona 12.000 de 132.000 linhas (~9,1%). Sem índice, o `Seq Scan` lê a tabela inteira e descarta 120.000 linhas. Com `idx_permanencia_status_entrada` (coluna líder `status`), o planejador monta um bitmap das páginas com ABERTAs e o `Bitmap Heap Scan` visita só elas (`Heap Blocks: exact=113`): o custo do nó cai de `2884.00` para `1523.77` e os buffers de 1234 `hit` para 113 `hit` + 12 `read`. `Hash Right Join`, `Sort` e `GroupAggregate` continuam iguais — a mudança é somente o caminho de acesso à tabela. Tempo medido: 17,561 → 10,329 ms (7,232 ms a menos nesta execução).
+- **Q07 — `Seq Scan` → `Index Only Scan`:** o `NOT EXISTS` vira `Nested Loop Anti Join` com `p.vaga_id = va.vaga_id`. Sem índice, cada uma das 120 vagas sonda `permanencia` com `Seq Scan` (estimativa de 132.000 linhas por sonda, `loops=120`). Com `idx_permanencia_vaga_entrada` (coluna líder `vaga_id`), a sonda usa `Index Cond` e retorna ~1 linha por vaga; como a consulta precisa apenas de `vaga_id`, coluna já presente no índice, `Heap Fetches: 0`. O custo do anti-join cai de `3479.71` para `45.07`. O tempo quase não mudou (1,356 → 1,345 ms) porque no plano "antes" as páginas já estavam em cache (`shared hit`) e o anti-join para cedo; o ganho está em menos páginas tocadas e tende a crescer com mais vagas/dados — não vamos exagerar esse resultado.
+- **Q08 — sem mudança:** `status = 'FECHADA'` casa 120.000 de 132.000 linhas (~90,9%). Um índice em `(status, entrada)` exigiria visitar quase todas as páginas da tabela mais as do índice, então o planejador escolhe `Seq Scan` nos dois planos, com o mesmo custo `0.00..2884.00` e os mesmos 1234 buffers. A diferença de 74,748 para 70,467 ms é variação entre as duas execuções, não melhora causada por índice: índice não ajuda predicado de baixa seletividade.
+- **`idx_permanencia_veiculo`:** criado em `medicao`, mas nenhuma das três consultas medidas filtra ou junge por `veiculo_id` de forma seletiva (Q03 agrupa por veículo e não foi uma das três). Por isso não aparece nos planos; não há tempo ou ganho inventado para ele.
+
+Todos os números acima foram lidos das saídas brutas de `EXPLAIN (ANALYZE, BUFFERS)`; nenhum tempo foi estimado, arredondado de outro modo ou inventado.
+
+Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para `1000` e estourava `uk_medicao_veiculo_placa`; trocado por `'VE' || lpad(g::text, 5, '0')` (7 caracteres), após o que o `medir.sql` rodou com `MEDIR_EXIT=0`.
+
 ## Estrutura
 
 ```text
@@ -208,7 +305,7 @@ Redundâncias mantidas de propósito, todas com justificativa no modelo:
 ├── postgresql/           # 01_ddl, 02_inserts, 03_consultas, 04_indices
 ├── procedures/           # procedures e triggers (Frente C)
 ├── performance/          # massa de dados e EXPLAIN antes/depois (Frente B)
-├── app/                  # aplicação Java/Maven e testes (Frente C)
+├── app/                  # aplicação Java/Maven; testes DDL (A5) e consultas (B3)
 └── docker/               # init do PostgreSQL e Dockerfiles
 ```
 
@@ -221,6 +318,6 @@ Redundâncias mantidas de propósito, todas com justificativa no modelo:
 ## Próximos passos
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
-2. Frente B: 10 consultas, índices e `EXPLAIN` antes/depois.
+2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
 3. Frente C: procedures/triggers, app Java e suíte JUnit.
 4. Frente D: README final, log de IA, tag, zip e apresentação.
