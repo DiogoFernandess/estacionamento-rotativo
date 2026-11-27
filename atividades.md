@@ -205,11 +205,12 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Felipe
 
 ### C6. Docker da aplicação e dos testes
-- [ ] `Dockerfile.app` (build Maven + runtime JRE) e `Dockerfile.testes` (Maven).
-- [ ] Serviços `app` (profile `apps`) e `testes` (profile `testes`) no compose, dependendo do banco `healthy`.
+- [x] `Dockerfile.app` (build Maven + runtime JRE) e `Dockerfile.testes` (Maven).
+- [x] Serviços `app` (profile `apps`) e `testes` (profile `testes`) no compose, dependendo do banco `healthy`.
 - **Pronto quando:** `docker compose --profile apps run --rm app` e `docker compose run --rm testes` funcionam.
+- **Saída real:** com postgres `healthy` (neste ambiente `WSLENV=PG_PORT PG_PORT=5433` por 5432 ocupada), `docker.exe compose --profile apps run --rm --build app` executou o demo completo da C5 (vagas livres, entrada feliz, 10h R$ 45,00, `ESTAC-002`, `ESTAC-004`, ROLLBACK padrão) com sucesso; `docker.exe compose run --rm --build testes` retornou `BUILD SUCCESS`, `Tests run: 25, Failures: 0, Errors: 0, Skipped: 0`.
 - **Depende de:** C5
-- **Dono:** ______
+- **Dono:** Felipe
 
 ### C7. README — aplicação e IA
 - [ ] Instruções de execução, saída do app, decisões de JDBC (savepoint, BigDecimal, bind).

@@ -529,6 +529,23 @@ autoCommit=false | modo=ROLLBACK
 [INFO] Permanência de entrada feliz no demo: 144
 ```
 
+## Docker da aplicação e dos testes (C6)
+
+- `docker/Dockerfile.app`: build multi-stage (Maven 3.9 + Temurin 21) gera o fat JAR e runtime `eclipse-temurin:21-jre` executa `app.jar`.
+- `docker/Dockerfile.testes`: imagem Maven 3.9 + Temurin 21 para `mvn test`.
+- `docker-compose.yml`: serviços `app` (`profile: apps`) e `testes` (`profile: testes`), ambos com `depends_on: postgres condition: service_healthy` e variáveis `DB_URL/DB_USER/DB_PASSWORD`.
+
+**Saída real** (postgres `healthy`; neste ambiente `WSLENV=PG_PORT PG_PORT=5433` porque 5432 estava ocupada):
+
+```text
+$ docker.exe compose --profile apps run --rm --build app
+... demo C5 executado com sucesso (vagas livres, entrada, saída 10h R$ 45,00, ESTAC-002, ESTAC-004, ROLLBACK)
+
+$ docker.exe compose run --rm --build testes
+[INFO] Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
 ## Estrutura
 
 ```text
@@ -558,5 +575,5 @@ autoCommit=false | modo=ROLLBACK
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
 2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
-3. Frente C: procedures (C1), triggers (C2), testes manuais de lógica (C3), testes JUnit de procedures/triggers/concorrência (C4) e aplicação Java (C5) concluídos; faltam Docker da aplicação/testes (C6) e README/IA da aplicação (C7).
+3. Frente C: procedures (C1), triggers (C2), testes manuais de lógica (C3), testes JUnit de procedures/triggers/concorrência (C4), aplicação Java (C5) e Docker da aplicação/testes (C6) concluídos; falta README/IA da aplicação (C7).
 4. Frente D: README final, log de IA, tag, zip e apresentação.
