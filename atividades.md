@@ -188,11 +188,12 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 - **Dono:** Felipe
 
 ### C4. Testes JUnit de procedures/triggers/concorrência
-- [ ] 7 de procedures, 3 de triggers e 1 de concorrência (duas conexões para a última vaga).
-- [ ] Cada teste em transação com rollback; savepoint depois de erro esperado.
+- [x] 7 de procedures, 3 de triggers e 1 de concorrência (duas conexões para a última vaga).
+- [x] Cada teste em transação com rollback; savepoint depois de erro esperado.
 - **Pronto quando:** os 11 passam e o teste de concorrência prova que só uma sessão vence.
+- **Saída real:** `WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --build testes` com postgres `healthy` → `BUILD SUCCESS`, `Tests run: 25, Failures: 0, Errors: 0, Skipped: 0` (11 novos da C4 + 14 anteriores). Breakdown: `ProcedureTest` 7, `TriggerTest` 3, `ConcorrenciaTest` 1, `ConsultasQ01aQ10Test` 10, `DdlConstraintTest` 4. O teste de concorrência ocupa 15 das 16 vagas livres de moto, dispara 2 `registrar_entrada` em paralelo (barreira) e comprova 1 sucesso + 1 `ESTAC-001`, com rollback/limpeza dos dados de teste.
 - **Depende de:** C1, C2
-- **Dono:** ______
+- **Dono:** Felipe
 
 ### C5. Aplicação Java
 - [ ] `app/pom.xml` com Java 21, driver PostgreSQL e JUnit 5; fat JAR.
