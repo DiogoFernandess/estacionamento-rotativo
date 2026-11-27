@@ -178,3 +178,108 @@ BEGIN
     WHERE permanencia_id = p_permanencia_id;
 END;
 $$;
+
+-- =====================================================================
+-- C2 — triggers de permanencia
+-- Caminho oficial são as procedures; estes triggers são a rede de segurança
+-- para INSERT/UPDATE diretos (decisions.md §4).
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- trg_permanencia_valida (BEFORE INSERT OR UPDATE)
+-- ESTAC-004: veículo e vaga precisam ser do mesmo tipo (RN-06).
+-- ESTAC-005: no máximo uma permanência ABERTA por vaga (RN-07).
+-- ESTAC-006: no máximo uma permanência ABERTA por veículo (RN-07).
+-- A sobreposição e a segunda aberta só fazem sentido para NEW.status
+-- ABERTA; permanências FECHADAS convivem na mesma vaga em horários
+-- distintos (é o que o seed faz). Em UPDATE a própria linha não conta.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_permanencia_valida()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_tipo_veiculo INTEGER;
+    v_tipo_vaga    INTEGER;
+BEGIN
+    SELECT tipo_id INTO v_tipo_veiculo
+    FROM veiculo
+    WHERE veiculo_id = NEW.veiculo_id;
+    SELECT tipo_id INTO v_tipo_vaga
+    FROM vaga
+    WHERE vaga_id = NEW.vaga_id;
+
+    IF v_tipo_veiculo IS DISTINCT FROM v_tipo_vaga THEN
+        RAISE EXCEPTION 'ESTAC-004: tipo do veículo (%) difere do tipo da vaga (%)',
+            v_tipo_veiculo, v_tipo_vaga
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    IF NEW.status = 'ABERTA' THEN
+        IF EXISTS (
+            SELECT 1
+            FROM permanencia p
+            WHERE p.vaga_id = NEW.vaga_id
+              AND p.status = 'ABERTA'
+              AND p.permanencia_id <> NEW.permanencia_id
+        ) THEN
+            RAISE EXCEPTION 'ESTAC-005: vaga já possui permanência aberta: %', NEW.vaga_id
+                USING ERRCODE = 'P0001';
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+            FROM permanencia p
+            WHERE p.veiculo_id = NEW.veiculo_id
+              AND p.status = 'ABERTA'
+              AND p.permanencia_id <> NEW.permanencia_id
+        ) THEN
+            RAISE EXCEPTION 'ESTAC-006: veículo já possui permanência aberta: %', NEW.veiculo_id
+                USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_permanencia_valida
+BEFORE INSERT OR UPDATE ON permanencia
+FOR EACH ROW
+EXECUTE FUNCTION fn_permanencia_valida();
+
+-- ---------------------------------------------------------------------
+-- trg_permanencia_auditoria (AFTER INSERT OR UPDATE OF status, valor)
+-- Registra operação, antes/depois de status e valor, usuário e data.
+-- INSERT não tem "antes"; UPDATE por UPDATE de valor também dispara e
+-- mantém status_antes = status_depois quando o status não mudou.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_permanencia_auditoria()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO auditoria_permanencia (
+        permanencia_id, operacao,
+        status_antes, status_depois,
+        valor_antes, valor_depois,
+        usuario_bd, data_hora
+    )
+    VALUES (
+        NEW.permanencia_id,
+        TG_OP,
+        CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.status END,
+        NEW.status,
+        CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.valor END,
+        NEW.valor,
+        CURRENT_USER,
+        CURRENT_TIMESTAMP
+    );
+    RETURN NULL; -- AFTER: valor de retorno ignorado
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_permanencia_auditoria
+AFTER INSERT OR UPDATE OF status, valor ON permanencia
+FOR EACH ROW
+EXECUTE FUNCTION fn_permanencia_auditoria();
