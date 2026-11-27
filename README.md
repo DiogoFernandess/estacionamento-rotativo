@@ -290,6 +290,37 @@ Todos os números acima foram lidos das saídas brutas de `EXPLAIN (ANALYZE, BUF
 
 Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para `1000` e estourava `uk_medicao_veiculo_placa`; trocado por `'VE' || lpad(g::text, 5, '0')` (7 caracteres), após o que o `medir.sql` rodou com `MEDIR_EXIT=0`.
 
+## Procedures de negócio (C1)
+
+Arquivo: [`procedures/postgresql_procedures.sql`](procedures/postgresql_procedures.sql), executado pelo init na ordem `01_ddl` → `02_inserts` → **procedures** → `04_indices`. As duas procedures **não fazem `COMMIT`**: quem chama controla a transação. Os triggers de validação/auditoria entram na C2, no mesmo arquivo.
+
+- `registrar_entrada(p_placa, p_tipo)` — normaliza placa e tipo (maiúsculas, sem hífen/espaços); valida tipo e tarifa vigente antes da permanência aberta (`ESTAC-004` → `ESTAC-006`); escolhe a menor vaga ativa livre do tipo com `FOR UPDATE SKIP LOCKED` (`ESTAC-001`) e insere a permanência ABERTA com `valor = 0`, `ticket_perdido = FALSE` e `tarifa_id` congelado. Veículo anônimo é criado na primeira entrada; se a placa já existe com outro tipo, barra com `ESTAC-004`.
+- `registrar_saida(p_permanencia_id, p_forma_pagamento, p_ticket_perdido DEFAULT FALSE)` — trava a linha com `FOR UPDATE` (`ESTAC-002`); usa a tarifa congelada da entrada; ticket perdido (`RN-05`) substitui o cálculo por tempo; tolerância de 15 min (`RN-02`); 1ª hora + frações iniciadas com `CEIL` e teto por permanência (`RN-03`/`RN-04`/`RN-10`); com valor > 0 valida a forma (`ESTAC-003`) e insere o pagamento; valor 0 não gera pagamento (`RN-09`); fecha com `saida`, `valor`, `status = 'FECHADA'` e `ticket_perdido` persistido (`RN-08`; a coluna alimenta a categoria `TICKET_PERDIDO` da Q08).
+
+**Saída real do psql** (cada cenário em transação com `ROLLBACK`, `ON_ERROR_STOP=1`):
+
+```text
+entrada 'abc-3e45'/'carro'       -> veiculo_id=34 permanencia_id=33 vaga=C001 (normalizada ABC3E45)
+tipo 'CAMINHAO'                  -> SQLSTATE=P0001 ESTAC-004: tipo de veículo inválido: CAMINHAO
+placa QRS1A11 com ABERTA         -> SQLSTATE=P0001 ESTAC-006: veículo QRS1A11 já possui permanência aberta
+placa XYZ1K11 (moto) como carro  -> SQLSTATE=P0001 ESTAC-004: veículo XYZ1K11 é do tipo MOTO, não CARRO
+saída da permanência 18 (10h)    -> valor=45.00 status=FECHADA, pagamento PIX 45.00 (teto)
+saída repetida da permanência 18 -> SQLSTATE=P0001 ESTAC-002: permanência inexistente ou já fechada: 18
+forma 'BOLETO'                   -> SQLSTATE=P0001 ESTAC-003: forma de pagamento ausente/inválida: BOLETO
+fronteiras (carro):
+  15:00 ->  0,00      15:01 -> 12,00      60:00 -> 12,00      60:01 -> 16,00
+  90:00 -> 16,00      90:01 -> 20,00     5h00 -> 44,00      5h00:01 -> 45,00
+ticket perdido (2 min)           -> 60,00 (sobrepõe tolerância/tempo), ticket_perdido=t na permanência
+ticket perdido na permanência 18 -> valor=60.00 status=FECHADA ticket_perdido=t, pagamento DINHEIRO 60.00
+tolerância (moto, 15 min)        -> valor=0,00, 0 linhas em pagamento
+```
+
+O tempo exato das fronteiras foi obtido inserindo a permanência com `entrada = CURRENT_TIMESTAMP - INTERVAL ...` dentro da mesma transação da chamada (`CURRENT_TIMESTAMP` é constante na transação).
+
+**Subida limpa após a C1:** `docker compose down -v` (`DOWN_EXIT=0`) + `docker compose up -d --wait` (`UP_EXIT=0`, container `healthy`). Catálogo: `registrar_entrada(IN p_placa character varying, IN p_tipo character varying)` e `registrar_saida(IN p_permanencia_id integer, IN p_forma_pagamento character varying, IN p_ticket_perdido boolean DEFAULT false)`. Seed inalterado: 2 tipos, 2 tarifas, 120 vagas, 31 veículos, 31 permanências, 15 pagamentos e os 3 índices `idx_permanencia_*`. Suíte JUnit: `docker compose run --rm testes` → `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`.
+
+Erro real encontrado e corrigido na C1: `v_tipo VARCHAR(5)` estourava com `CAMINHAO` (`SQLSTATE=22001`) antes de checar o `ESTAC-004`. As variáveis de normalização passaram a `VARCHAR(50)` (inclusive `v_forma`), mantendo o erro de negócio com `P0001`/`ESTAC-00x` como previsto.
+
 ## Estrutura
 
 ```text
@@ -319,5 +350,5 @@ Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para 
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
 2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
-3. Frente C: procedures/triggers, app Java e suíte JUnit.
+3. Frente C: procedures (C1 concluída), triggers, app Java e suíte JUnit.
 4. Frente D: README final, log de IA, tag, zip e apresentação.
