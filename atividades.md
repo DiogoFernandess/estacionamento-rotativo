@@ -162,56 +162,63 @@ Fundação → A (modelo/DDL/seed) → B (consultas/índices) ∥ C (procedures/
 ## Frente C — Procedures, triggers e aplicação (10 pts)
 
 ### C1. Procedures
-- [ ] `registrar_entrada(p_placa, p_tipo)` conforme `decisions.md`: valida tipo/veículo, tarifa ativa, vaga livre com `FOR UPDATE SKIP LOCKED`, insere permanência.
-- [ ] `registrar_saida(p_permanencia_id, p_forma_pagamento, p_ticket_perdido)`: trava, calcula, valida pagamento, fecha e insere pagamento.
-- [ ] Comentários dizendo qual regra cada procedure implementa; **sem COMMIT**.
+- [x] `registrar_entrada(p_placa, p_tipo)` conforme `decisions.md`: valida tipo/veículo, tarifa ativa, vaga livre com `FOR UPDATE SKIP LOCKED`, insere permanência.
+- [x] `registrar_saida(p_permanencia_id, p_forma_pagamento, p_ticket_perdido)`: trava, calcula, valida pagamento, fecha e insere pagamento.
+- [x] Comentários dizendo qual regra cada procedure implementa; **sem COMMIT**.
 - **Pronto quando:** as duas rodam no psql no caminho feliz e nos erros de negócio.
+- **Saída real:** psql com `ON_ERROR_STOP=1`, 10 cenários em transações com `ROLLBACK`: entrada normalizada `abc-3e45` → vaga `C001`; `ESTAC-004` (tipo inválido e tipo incompatível), `ESTAC-006` (aberta existente), `ESTAC-002` (saída repetida) e `ESTAC-003` (forma inválida), todos com `SQLSTATE=P0001`; saída da permanência semeada há 10h → `45,00` com pagamento `PIX`; 8 fronteiras conferidas (15:00/15:01, 60:00/60:01, 90:00/90:01, 5h00:00/5h00:01) e ticket perdido `60,00` com `ticket_perdido=t` persistido (Q08); tolerância com valor `0,00` e nenhum pagamento. Catálogo mostra as 2 procedures com os parâmetros esperados. `down -v` + `up -d --wait`: `DOWN_EXIT=0`, `UP_EXIT=0`, `healthy`; suíte `TESTES_EXIT=0` (`14` testes, `BUILD SUCCESS`). Detalhes no README.
 - **Depende de:** A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### C2. Triggers
-- [ ] `trg_permanencia_valida` (BEFORE INSERT/UPDATE): tipo, sobreposição e segunda permanência aberta.
-- [ ] `trg_permanencia_auditoria` (AFTER INSERT/UPDATE OF status, valor): antes/depois, usuário e data.
-- [ ] Garantir que INSERT direto na tabela também é barrado.
+- [x] `trg_permanencia_valida` (BEFORE INSERT/UPDATE): tipo, sobreposição e segunda permanência aberta.
+- [x] `trg_permanencia_auditoria` (AFTER INSERT/UPDATE OF status, valor): antes/depois, usuário e data.
+- [x] Garantir que INSERT direto na tabela também é barrado.
 - **Pronto quando:** os triggers disparam nos testes e gravam a auditoria correta.
+- **Saída real:** psql com `ON_ERROR_STOP=1`: INSERT direto incompatível → `ESTAC-004`, em vaga já aberta → `ESTAC-005` e com veículo já aberto → `ESTAC-006` (todos `P0001`); INSERT direto válido gera auditoria `INSERT / NULL → ABERTA / NULL → 0.00`; UPDATE de valor na própria permanência aberta não é barrado e grava `UPDATE / ABERTA → ABERTA / 0.00 → 1.00`; `registrar_saida` grava `UPDATE / ABERTA → FECHADA / 0.00 → 45.00` com `usuario_bd=estacionamento`; UPDATE só em `ticket_perdido` não gera auditoria. Catálogo mostra os 2 triggers. `down -v` + `up -d --wait`: `DOWN_EXIT=0`, `UP_EXIT=0`, `healthy`; seed com 31 permanências e 0 auditorias (o init roda o seed antes dos triggers); suíte `TESTES_EXIT=0` (`14` testes, `BUILD SUCCESS`). Detalhes no README.
 - **Depende de:** A2
-- **Dono:** ______
+- **Dono:** Vicente
 
 ### C3. Testes manuais de lógica
-- [ ] Testar no psql: entrada feliz, sem vaga, veículo já aberto, saída na tolerância, 60/60:01, 90/90:01, teto e ticket perdido.
-- [ ] Testar saída dupla (`ESTAC-002`) e tipo incompatível (`ESTAC-004`).
+- [x] Testar no psql: entrada feliz, sem vaga, veículo já aberto, saída na tolerância, 60/60:01, 90/90:01, teto e ticket perdido.
+- [x] Testar saída dupla (`ESTAC-002`) e tipo incompatível (`ESTAC-004`).
 - **Pronto quando:** as saídas reais estão registradas para o README/log.
+- **Saída real:** `docker compose down -v` + `WSLENV=PG_PORT PG_PORT=5433 docker.exe compose up -d --wait` (`healthy`) em banco limpo; 10 cenários executados no `psql` (`ON_ERROR_STOP=1`) em transações com `ROLLBACK`: entrada feliz `TST1A23/CARRO` → vaga `C001`; sem vaga após ocupar as 16 vagas livres de moto → `ESTAC-001`; veículo já aberto `QRS1A11` → `ESTAC-006`; tolerância 15:00 → `0,00` com 0 pagamentos; fronteiras 60:00/60:01 → `12,00/16,00` e 90:00/90:01 → `16,00/20,00`; teto da permanência 18 (10h, seed) → `45,00` PIX; ticket perdido 2 min → `60,00` DINHEIRO com `ticket_perdido=t`; saída dupla → `ESTAC-002`; tipo incompatível `XYZ1K11` como carro → `ESTAC-004`. Saída completa registrada no README.
 - **Depende de:** C1, C2
-- **Dono:** ______
+- **Dono:** Felipe
 
 ### C4. Testes JUnit de procedures/triggers/concorrência
-- [ ] 7 de procedures, 3 de triggers e 1 de concorrência (duas conexões para a última vaga).
-- [ ] Cada teste em transação com rollback; savepoint depois de erro esperado.
+- [x] 7 de procedures, 3 de triggers e 1 de concorrência (duas conexões para a última vaga).
+- [x] Cada teste em transação com rollback; savepoint depois de erro esperado.
 - **Pronto quando:** os 11 passam e o teste de concorrência prova que só uma sessão vence.
+- **Saída real:** `WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --build testes` com postgres `healthy` → `BUILD SUCCESS`, `Tests run: 25, Failures: 0, Errors: 0, Skipped: 0` (11 novos da C4 + 14 anteriores). Breakdown: `ProcedureTest` 7, `TriggerTest` 3, `ConcorrenciaTest` 1, `ConsultasQ01aQ10Test` 10, `DdlConstraintTest` 4. O teste de concorrência ocupa 15 das 16 vagas livres de moto, dispara 2 `registrar_entrada` em paralelo (barreira) e comprova 1 sucesso + 1 `ESTAC-001`, com rollback/limpeza dos dados de teste.
 - **Depende de:** C1, C2
-- **Dono:** ______
+- **Dono:** Felipe
 
 ### C5. Aplicação Java
-- [ ] `app/pom.xml` com Java 21, driver PostgreSQL e JUnit 5; fat JAR.
-- [ ] Consulta com bind, `CallableStatement` com `escapeSyntaxCallMode=callIfNoReturn`, `Savepoint`, `BigDecimal`, `autoCommit=false`.
-- [ ] Demo: vagas livres, entrada, saída da permanência de 10h (R$ 45), saída repetida (`ESTAC-002`), tipo incompatível (`ESTAC-004`), rollback/`--efetivar`.
+- [x] `app/pom.xml` com Java 21, driver PostgreSQL e JUnit 5; fat JAR.
+- [x] Consulta com bind, `CallableStatement` com `escapeSyntaxCallMode=callIfNoReturn`, `Savepoint`, `BigDecimal`, `autoCommit=false`.
+- [x] Demo: vagas livres, entrada, saída da permanência de 10h (R$ 45), saída repetida (`ESTAC-002`), tipo incompatível (`ESTAC-004`), rollback/`--efetivar`.
 - **Pronto quando:** o app roda e mostra o roteiro completo com o erro de negócio tratado.
+- **Saída real:** `WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --entrypoint bash testes -lc "mvn -B -q -DskipTests package && java -jar target/estacionamento-rotativo-1.0.0.jar"` (postgres `healthy`) executou o demo completo: `autoCommit=false`; vagas livres por tipo com bind (CARRO 90, MOTO 16); entrada feliz `APP1A01` → permanência 144, vaga `C001`; consulta de permanências abertas com bind e seleção da 10h (#18, `QRS1A11`); saída da #18 → `FECHADA valor=45.00 forma=PIX pagamento=45.00`; saída repetida → `ESTAC-002`; tipo incompatível (`XYZ1K11` como CARRO) → `ESTAC-004`; final com `ROLLBACK` por padrão (`--efetivar` faz COMMIT).
 - **Depende de:** C1
-- **Dono:** ______
+- **Dono:** Felipe
 
 ### C6. Docker da aplicação e dos testes
-- [ ] `Dockerfile.app` (build Maven + runtime JRE) e `Dockerfile.testes` (Maven).
-- [ ] Serviços `app` (profile `apps`) e `testes` (profile `testes`) no compose, dependendo do banco `healthy`.
+- [x] `Dockerfile.app` (build Maven + runtime JRE) e `Dockerfile.testes` (Maven).
+- [x] Serviços `app` (profile `apps`) e `testes` (profile `testes`) no compose, dependendo do banco `healthy`.
 - **Pronto quando:** `docker compose --profile apps run --rm app` e `docker compose run --rm testes` funcionam.
+- **Saída real:** com postgres `healthy` (neste ambiente `WSLENV=PG_PORT PG_PORT=5433` por 5432 ocupada), `docker.exe compose --profile apps run --rm --build app` executou o demo completo da C5 (vagas livres, entrada feliz, 10h R$ 45,00, `ESTAC-002`, `ESTAC-004`, ROLLBACK padrão) com sucesso; `docker.exe compose run --rm --build testes` retornou `BUILD SUCCESS`, `Tests run: 25, Failures: 0, Errors: 0, Skipped: 0`.
 - **Depende de:** C5
-- **Dono:** ______
+- **Dono:** Felipe
 
 ### C7. README — aplicação e IA
-- [ ] Instruções de execução, saída do app, decisões de JDBC (savepoint, BigDecimal, bind).
-- [ ] Log de uso de IA com ≥5 registros, ≥4 tipos de artefato e ≥2 erros reais; reflexão.
+- [x] Instruções de execução, saída do app, decisões de JDBC (savepoint, BigDecimal, bind).
+- [x] Log de uso de IA com ≥5 registros, ≥4 tipos de artefato e ≥2 erros reais; reflexão.
 - **Pronto quando:** alguém roda o app só com o README; a tabela de IA tem erros concretos.
+- **Saída real:** README atualizado com comandos de execução (`up`, `testes`, `app`, `--efetivar`), saída real do app C5, seção “Decisões de JDBC” (autoCommit, PreparedStatement/bind, CallableStatement+`escapeSyntaxCallMode=callIfNoReturn`, Savepoint, BigDecimal) e seção “Uso de IA” com 5 registros, 5 tipos de artefato e erros reais corrigidos (CRLF no init, placas/filtro inválidos no script C3, violação `ck_permanencia_saida` por `CURRENT_TIMESTAMP` na mesma transação, erros de compilação JUnit, conflito de porta 5432).
 - **Depende de:** C5, C6
-- **Dono:** ______
+- **Dono:** Felipe
 
 ## Frente D — Integração e entrega (compartilhada)
 

@@ -19,12 +19,14 @@ Sistema de banco de dados para um estacionamento rotativo fictício com **100 va
 
 ## Como rodar
 
-Pré-requisito: Docker com Compose.
+Pré-requisito: Docker com Compose (Docker Desktop no Windows/WSL). No WSL desta máquina, use `docker.exe`; se a porta 5432 estiver ocupada, prefixe com `WSLENV=PG_PORT PG_PORT=5433`.
 
 ```bash
-docker compose down -v      # apaga o volume e força a reinicialização
-docker compose up -d --wait # sobe o PostgreSQL e roda o init
-docker compose run --rm testes # suíte JUnit (Frente A em diante)
+docker compose down -v                # apaga o volume e força a reinicialização
+docker compose up -d --wait           # sobe o PostgreSQL e roda o init
+docker compose run --rm testes        # suíte JUnit (build + mvn test)
+docker compose --profile apps run --rm app   # demo da aplicação Java (ROLLBACK padrão)
+docker compose --profile apps run --rm app -- --efetivar  # demo com COMMIT
 ```
 
 Conferir o banco:
@@ -290,6 +292,270 @@ Todos os números acima foram lidos das saídas brutas de `EXPLAIN (ANALYZE, BUF
 
 Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para `1000` e estourava `uk_medicao_veiculo_placa`; trocado por `'VE' || lpad(g::text, 5, '0')` (7 caracteres), após o que o `medir.sql` rodou com `MEDIR_EXIT=0`.
 
+## Procedures de negócio (C1)
+
+Arquivo: [`procedures/postgresql_procedures.sql`](procedures/postgresql_procedures.sql), executado pelo init na ordem `01_ddl` → `02_inserts` → **procedures** → `04_indices`. As duas procedures **não fazem `COMMIT`**: quem chama controla a transação. Os triggers de validação/auditoria entram na C2, no mesmo arquivo.
+
+- `registrar_entrada(p_placa, p_tipo)` — normaliza placa e tipo (maiúsculas, sem hífen/espaços); valida tipo e tarifa vigente antes da permanência aberta (`ESTAC-004` → `ESTAC-006`); escolhe a menor vaga ativa livre do tipo com `FOR UPDATE SKIP LOCKED` (`ESTAC-001`) e insere a permanência ABERTA com `valor = 0`, `ticket_perdido = FALSE` e `tarifa_id` congelado. Veículo anônimo é criado na primeira entrada; se a placa já existe com outro tipo, barra com `ESTAC-004`.
+- `registrar_saida(p_permanencia_id, p_forma_pagamento, p_ticket_perdido DEFAULT FALSE)` — trava a linha com `FOR UPDATE` (`ESTAC-002`); usa a tarifa congelada da entrada; ticket perdido (`RN-05`) substitui o cálculo por tempo; tolerância de 15 min (`RN-02`); 1ª hora + frações iniciadas com `CEIL` e teto por permanência (`RN-03`/`RN-04`/`RN-10`); com valor > 0 valida a forma (`ESTAC-003`) e insere o pagamento; valor 0 não gera pagamento (`RN-09`); fecha com `saida`, `valor`, `status = 'FECHADA'` e `ticket_perdido` persistido (`RN-08`; a coluna alimenta a categoria `TICKET_PERDIDO` da Q08).
+
+**Saída real do psql** (cada cenário em transação com `ROLLBACK`, `ON_ERROR_STOP=1`):
+
+```text
+entrada 'abc-3e45'/'carro'       -> veiculo_id=34 permanencia_id=33 vaga=C001 (normalizada ABC3E45)
+tipo 'CAMINHAO'                  -> SQLSTATE=P0001 ESTAC-004: tipo de veículo inválido: CAMINHAO
+placa QRS1A11 com ABERTA         -> SQLSTATE=P0001 ESTAC-006: veículo QRS1A11 já possui permanência aberta
+placa XYZ1K11 (moto) como carro  -> SQLSTATE=P0001 ESTAC-004: veículo XYZ1K11 é do tipo MOTO, não CARRO
+saída da permanência 18 (10h)    -> valor=45.00 status=FECHADA, pagamento PIX 45.00 (teto)
+saída repetida da permanência 18 -> SQLSTATE=P0001 ESTAC-002: permanência inexistente ou já fechada: 18
+forma 'BOLETO'                   -> SQLSTATE=P0001 ESTAC-003: forma de pagamento ausente/inválida: BOLETO
+fronteiras (carro):
+  15:00 ->  0,00      15:01 -> 12,00      60:00 -> 12,00      60:01 -> 16,00
+  90:00 -> 16,00      90:01 -> 20,00     5h00 -> 44,00      5h00:01 -> 45,00
+ticket perdido (2 min)           -> 60,00 (sobrepõe tolerância/tempo), ticket_perdido=t na permanência
+ticket perdido na permanência 18 -> valor=60.00 status=FECHADA ticket_perdido=t, pagamento DINHEIRO 60.00
+tolerância (moto, 15 min)        -> valor=0,00, 0 linhas em pagamento
+```
+
+O tempo exato das fronteiras foi obtido inserindo a permanência com `entrada = CURRENT_TIMESTAMP - INTERVAL ...` dentro da mesma transação da chamada (`CURRENT_TIMESTAMP` é constante na transação).
+
+**Subida limpa após a C1:** `docker compose down -v` (`DOWN_EXIT=0`) + `docker compose up -d --wait` (`UP_EXIT=0`, container `healthy`). Catálogo: `registrar_entrada(IN p_placa character varying, IN p_tipo character varying)` e `registrar_saida(IN p_permanencia_id integer, IN p_forma_pagamento character varying, IN p_ticket_perdido boolean DEFAULT false)`. Seed inalterado: 2 tipos, 2 tarifas, 120 vagas, 31 veículos, 31 permanências, 15 pagamentos e os 3 índices `idx_permanencia_*`. Suíte JUnit: `docker compose run --rm testes` → `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`.
+
+Erro real encontrado e corrigido na C1: `v_tipo VARCHAR(5)` estourava com `CAMINHAO` (`SQLSTATE=22001`) antes de checar o `ESTAC-004`. As variáveis de normalização passaram a `VARCHAR(50)` (inclusive `v_forma`), mantendo o erro de negócio com `P0001`/`ESTAC-00x` como previsto.
+
+## Triggers de permanência (C2)
+
+Mesmo arquivo [`procedures/postgresql_procedures.sql`](procedures/postgresql_procedures.sql), após as procedures. O caminho oficial continua sendo as procedures; os triggers são a rede de segurança para `INSERT`/`UPDATE` diretos (`decisions.md` §4).
+
+- `trg_permanencia_valida` (`BEFORE INSERT OR UPDATE`) — tipo do veículo = tipo da vaga (`ESTAC-004`, RN-06); no máximo uma permanência ABERTA por vaga (`ESTAC-005`) e por veículo (`ESTAC-006`, RN-07). Sobreposição e segunda aberta só são avaliadas quando `NEW.status = 'ABERTA'`: permanências FECHADAS convivem na mesma vaga em horários distintos (é o que o seed faz). Em `UPDATE`, a própria `NEW.permanencia_id` é excluída das duas checagens.
+- `trg_permanencia_auditoria` (`AFTER INSERT OR UPDATE OF status, valor`) — grava operação, `status`/`valor` antes e depois, `usuario_bd` (`CURRENT_USER`) e `data_hora` em `auditoria_permanencia`. `INSERT` não tem "antes"; `UPDATE` que não toca `status`/`valor` não dispara.
+
+**Saída real do psql** (cada cenário em transação com `ROLLBACK`, `ON_ERROR_STOP=1`):
+
+```text
+INSERT direto, moto em vaga de carro -> SQLSTATE=P0001 ESTAC-004: tipo do veículo (2) difere do tipo da vaga (1)
+INSERT direto em C010 (já ABERTA)    -> SQLSTATE=P0001 ESTAC-005: vaga já possui permanência aberta: 10
+INSERT direto, QRS1A11 (já ABERTA)   -> SQLSTATE=P0001 ESTAC-006: veículo já possui permanência aberta: 10
+INSERT direto válido                 -> auditoria INSERT | antes NULL/NULL | depois ABERTA/0.00 | usuario estacionamento
+UPDATE valor=1 na permanência 18     -> auditoria UPDATE | ABERTA -> ABERTA | 0.00 -> 1.00 (não barrado pela própria aberta)
+registrar_saida(18,'PIX',FALSE)      -> auditoria UPDATE | ABERTA -> FECHADA | 0.00 -> 45.00 | usuario estacionamento
+UPDATE só em ticket_perdido          -> auditorias antes=0 depois=0 (trigger não dispara)
+catálogo: trg_permanencia_valida (BEFORE INSERT OR UPDATE) e trg_permanencia_auditoria (AFTER INSERT OR UPDATE OF status, valor)
+```
+
+**Subida limpa após a C2:** `docker compose down -v` (`DOWN_EXIT=0`) + `docker compose up -d --wait` (`UP_EXIT=0`, `healthy`). O init executa `02_inserts` **antes** das procedures, então o seed permanece com 31 permanências e `0` auditorias; os 2 triggers e as 4 funções (`registrar_entrada`, `registrar_saida`, `fn_permanencia_valida`, `fn_permanencia_auditoria`) aparecem no catálogo. Suíte JUnit: `TESTES_EXIT=0`, `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`.
+
+## Testes manuais de lógica (C3)
+
+Execução manual no `psql` contra o banco recém-inicializado (`docker compose down -v` + `WSLENV=PG_PORT PG_PORT=5433 docker.exe compose up -d --wait`, `healthy`), com cada cenário em transação própria e `ROLLBACK` ao final. O script foi executado com `psql -U estacionamento -d estacionamento -v ON_ERROR_STOP=1 -f /dev/stdin` dentro do container `postgres`. Saída real:
+
+```text
+Pager usage is off.
+=== C3.1 entrada feliz ===
+BEGIN
+CALL
+ permanencia_id |  placa  | tipo  | vaga | status | valor | ticket_perdido 
+----------------+---------+-------+------+--------+-------+----------------
+             42 | TST1A23 | CARRO | C001 | ABERTA |  0.00 | f
+(1 row)
+
+ROLLBACK
+
+=== C3.2 sem vaga (MOTO) ===
+BEGIN
+INSERT 0 16
+INSERT 0 16
+DO
+psql:/dev/stdin:42: NOTICE:  SQLSTATE=P0001 ESTAC-001: sem vaga livre do tipo MOTO
+ROLLBACK
+
+=== C3.3 veiculo ja aberto ===
+BEGIN
+DO
+psql:/dev/stdin:54: NOTICE:  SQLSTATE=P0001 ESTAC-006: veículo QRS1A11 já possui permanência aberta
+ROLLBACK
+
+=== C3.4 saida na tolerancia (15:00) ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+CALL
+ permanencia_id | status  | valor | ticket_perdido | pagamentos 
+----------------+---------+-------+----------------+------------
+             59 | FECHADA |  0.00 | f              |          0
+(1 row)
+
+ROLLBACK
+
+=== C3.5 fronteiras 60:00 e 60:01 ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+CALL
+CALL
+ caso  | valor | status  
+-------+-------+---------
+ 60:00 | 12.00 | FECHADA
+ 60:01 | 16.00 | FECHADA
+(2 rows)
+
+ROLLBACK
+
+=== C3.6 fronteiras 90:00 e 90:01 ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+CALL
+CALL
+ caso  | valor | status  
+-------+-------+---------
+ 90:00 | 16.00 | FECHADA
+ 90:01 | 20.00 | FECHADA
+(2 rows)
+
+ROLLBACK
+
+=== C3.7 teto (10h, carro) ===
+BEGIN
+CALL
+ permanencia_id |  placa  | status  | valor | forma | pagamento_valor 
+----------------+---------+---------+-------+-------+-----------------
+             18 | QRS1A11 | FECHADA | 45.00 | PIX   |           45.00
+(1 row)
+
+ROLLBACK
+
+=== C3.8 ticket perdido ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+CALL
+ permanencia_id | status  | valor | ticket_perdido |  forma   | pagamento_valor 
+----------------+---------+-------+----------------+----------+-----------------
+             64 | FECHADA | 60.00 | t              | DINHEIRO |           60.00
+(1 row)
+
+ROLLBACK
+
+=== C3.9 saida dupla (ESTAC-002) ===
+BEGIN
+INSERT 0 1
+INSERT 0 1
+CALL
+SAVEPOINT
+psql:/dev/stdin:141: ERROR:  ESTAC-002: permanência inexistente ou já fechada: 65
+CONTEXT:  PL/pgSQL function registrar_saida(integer,character varying,boolean) line 15 at RAISE
+ROLLBACK
+ROLLBACK
+
+=== C3.10 tipo incompativel (ESTAC-004) ===
+BEGIN
+DO
+ROLLBACK
+psql:/dev/stdin:155: NOTICE:  SQLSTATE=P0001 ESTAC-004: veículo XYZ1K11 é do tipo MOTO, não CARRO
+```
+
+Cobertura dos cenários pedidos: entrada feliz (C3.1), sem vaga `ESTAC-001` após ocupar as 16 vagas livres de moto no mesmo teste (C3.2), veículo já aberto `ESTAC-006` (C3.3), saída na tolerância 15:00 com valor 0 e sem pagamento (C3.4), fronteiras 60:00/60:01 e 90:00/90:01 (C3.5, C3.6), teto da permanência de 10h do seed R$ 45,00 (C3.7), ticket perdido R$ 60,00 com `ticket_perdido=t` (C3.8), saída dupla `ESTAC-002` (C3.9) e tipo incompatível `ESTAC-004` (C3.10).
+
+## Testes JUnit de procedures, triggers e concorrência (C4)
+
+Testes em `app/src/test/java/br/estacionamento/`: `ProcedureTest.java` (7), `TriggerTest.java` (3) e `ConcorrenciaTest.java` (1). Cada teste usa transação com rollback; erros esperados usam `Savepoint`. O teste de concorrência abre duas conexões, ocupa 15 das 16 vagas livres de moto em setup commitado, dispara duas chamadas paralelas a `registrar_entrada` com barreira e verifica que exatamente uma vence e a outra recebe `ESTAC-001`; ao final faz rollback das conexões concorrentes e limpa os dados de teste.
+
+**Saída real** (`WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --build testes`, postgres `healthy`):
+
+```text
+[INFO] Running br.estacionamento.ConcorrenciaTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running br.estacionamento.ConsultasQ01aQ10Test
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running br.estacionamento.DdlConstraintTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running br.estacionamento.ProcedureTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running br.estacionamento.TriggerTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+
+[INFO] Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+## Aplicação Java (C5)
+
+Arquivo: `app/src/main/java/br/estacionamento/App.java`. O `pom.xml` usa Java 21, driver PostgreSQL 42.7.4, JUnit 5 e `maven-shade-plugin` para gerar fat JAR (`target/estacionamento-rotativo-1.0.0.jar`). Por padrão faz `ROLLBACK`; com `--efetivar` faz `COMMIT`.
+
+### Decisões de JDBC
+
+- **`autoCommit=false`**: a aplicação controla a transação; procedures não fazem `COMMIT` (decisions.md §4), então o `commit/rollback` fica no chamador.
+- **`PreparedStatement` + bind**: todas as consultas de leitura usam parâmetros (`?`), nunca concatenação de valores, evitando SQL injection e mantendo tipos.
+- **`CallableStatement` + `escapeSyntaxCallMode=callIfNoReturn`**: chamadas `CALL registrar_entrada(...)` e `CALL registrar_saida(...)` via JDBC; a propriedade `escapeSyntaxCallMode=callIfNoReturn` evita o tratamento de função/retorno do PostgreSQL para procedures.
+- **`Savepoint` antes de cada chamada**: em PostgreSQL, erro aborta a transação; antes de cada operação de demo a app cria um savepoint e faz `rollback(sp)` em caso de `ESTAC-00x`, permitindo capturar o erro de negócio e continuar o roteiro.
+- **`BigDecimal` para dinheiro**: valores `NUMERIC(10,2)` são lidos/escritos como `BigDecimal`, evitando arredondamento binário de `double/float`.
+
+**Saída real** (`WSLENV=PG_PORT PG_PORT=5433 docker.exe compose --profile testes run --rm --no-deps --entrypoint bash testes -lc "mvn -B -q -DskipTests package && java -jar target/estacionamento-rotativo-1.0.0.jar"`, postgres `healthy`):
+
+```text
+=== Demo Estacionamento Rotativo Central ===
+autoCommit=false | modo=ROLLBACK
+
+1) Consulta de vagas livres por tipo (PreparedStatement + bind)
+   - CARRO: 90 vagas livres
+   - MOTO: 16 vagas livres
+
+2) Entrada feliz (CallableStatement)
+   OK permanencia=144 placa=APP1A01 vaga=C001 status=ABERTA valor=0.00
+
+3) Consulta permanências abertas (PreparedStatement + bind)
+   - #18 placa=QRS1A11 tipo=CARRO vaga=C010 entrada=2026-11-26 12:46:29.451021
+   - #27 placa=QRS0J10 tipo=CARRO vaga=C019 entrada=2026-11-26 14:46:29.451021
+   - #31 placa=XYZ4N44 tipo=MOTO vaga=M012 entrada=2026-11-26 15:46:29.451021
+   - #26 placa=QRS9I99 tipo=CARRO vaga=C018 entrada=2026-11-26 16:46:29.451021
+   - #25 placa=QRS8H88 tipo=CARRO vaga=C017 entrada=2026-11-26 17:46:29.451021
+   - #24 placa=QRS7G77 tipo=CARRO vaga=C016 entrada=2026-11-26 18:46:29.451021
+   - #23 placa=QRS6F66 tipo=CARRO vaga=C015 entrada=2026-11-26 19:46:29.451021
+   - #30 placa=XYZ3M33 tipo=MOTO vaga=M011 entrada=2026-11-26 20:46:29.451021
+   - #22 placa=QRS5E55 tipo=CARRO vaga=C014 entrada=2026-11-26 20:46:29.451021
+   - #21 placa=QRS4D44 tipo=CARRO vaga=C013 entrada=2026-11-26 21:46:29.451021
+   - #29 placa=XYZ2L22 tipo=MOTO vaga=M010 entrada=2026-11-26 22:01:29.451021
+   - #20 placa=QRS3C33 tipo=CARRO vaga=C012 entrada=2026-11-26 22:16:29.451021
+   - #28 placa=XYZ1K11 tipo=MOTO vaga=M009 entrada=2026-11-26 22:26:29.451021
+   - #19 placa=QRS2B22 tipo=CARRO vaga=C011 entrada=2026-11-26 22:31:29.451021
+   - #144 placa=APP1A01 tipo=CARRO vaga=C001 entrada=2026-11-26 23:11:06.082466
+   Permanência de 10h selecionada: #18
+
+4) Saída da permanência de 10h (teto R$ 45,00)
+   OK status=FECHADA valor=45.00 forma=PIX pagamento=45.00
+
+5) Saída repetida (esperado ESTAC-002)
+   ERRO DE NEGÓCIO CAPTURADO: ESTAC-002: permanência inexistente ou já fechada: 18 [SQLState=P0001]
+
+6) Tipo incompatível (esperado ESTAC-004)
+   ERRO DE NEGÓCIO CAPTURADO: ESTAC-004: veículo XYZ1K11 é do tipo MOTO, não CARRO [SQLState=P0001]
+
+[TX] ROLLBACK efetuado (padrão). Use --efetivar para persistir.
+[INFO] Permanência de entrada feliz no demo: 144
+```
+
+## Docker da aplicação e dos testes (C6)
+
+- `docker/Dockerfile.app`: build multi-stage (Maven 3.9 + Temurin 21) gera o fat JAR e runtime `eclipse-temurin:21-jre` executa `app.jar`.
+- `docker/Dockerfile.testes`: imagem Maven 3.9 + Temurin 21 para `mvn test`.
+- `docker-compose.yml`: serviços `app` (`profile: apps`) e `testes` (`profile: testes`), ambos com `depends_on: postgres condition: service_healthy` e variáveis `DB_URL/DB_USER/DB_PASSWORD`.
+
+**Saída real** (postgres `healthy`; neste ambiente `WSLENV=PG_PORT PG_PORT=5433` porque 5432 estava ocupada):
+
+```text
+$ docker.exe compose --profile apps run --rm --build app
+... demo C5 executado com sucesso (vagas livres, entrada, saída 10h R$ 45,00, ESTAC-002, ESTAC-004, ROLLBACK)
+
+$ docker.exe compose run --rm --build testes
+[INFO] Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
 ## Estrutura
 
 ```text
@@ -309,6 +575,20 @@ Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para 
 └── docker/               # init do PostgreSQL e Dockerfiles
 ```
 
+## Uso de IA
+
+Registro das interações de IA usadas nesta etapa (C3–C7), com erros reais e correções. O `decisions.md` permaneceu como fonte de verdade e não foi editado.
+
+| # | Pedido / contexto | Tipo de artefato | O que a IA gerou | Erro/limitação real | Correção aplicada |
+|---:|---|---|---|---|---|
+| 1 | Executar C3 (testes manuais psql) | Script SQL/psql + documentação README | Script de cenários C3 com transações/ROLLBACK e registro da saída real | `docker/postgres-init.sh` com CRLF quebrou o init (`env: 'bash\r': No such file or directory`) e impediu subir o banco; além disso, o script C3 usou placas inválidas (`B600C01`, formato não bate com `ck_veiculo_placa`) e um filtro `LIKE 'SEM%M1'` incompatível com as placas geradas, produzindo `INSERT 0 0` no cenário “sem vaga” | Normalizei o init para LF, corrigi as placas para o formato `^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$`, ajustei o filtro para `SEM1A%` e reexecutei até obter saída real correta |
+| 2 | Executar C4 (11 testes JUnit) | Testes JUnit Java (procedures/triggers/concorrência) | Classes `ProcedureTest`, `TriggerTest`, `ConcorrenciaTest` e execução via `docker compose run --rm testes` | `TriggerTest` fez `UPDATE ... saida = CURRENT_TIMESTAMP` na mesma transação do INSERT, violando `ck_permanencia_saida` porque `CURRENT_TIMESTAMP` é constante na transação; também houve erros de compilação por `assertDecimal` com aridade errada e falta de import de `assertFalse` | Troquei para `saida = entrada + INTERVAL '1 minute'`, corrigi assinaturas/imports e reexecutei: `Tests run: 25, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS` |
+| 3 | Executar C5 (aplicação Java) | Código Java + Maven (fat JAR) | `App.java` com demo JDBC e `pom.xml` com `maven-shade-plugin` | Risco de não atender critérios do decisions: era necessário garantir `autoCommit=false`, bind, `CallableStatement` com `escapeSyntaxCallMode=callIfNoReturn`, `Savepoint`, `BigDecimal` e tradução `ESTAC-00x` | Implementei os requisitos explicitamente, empacotei o fat JAR e executei o demo real com ROLLBACK padrão, capturando a saída completa |
+| 4 | Executar C6 (Docker app/testes) | Dockerfiles + Docker Compose | `Dockerfile.app` multi-stage, ajuste do `docker-compose.yml` com serviço `app` (profile `apps`) | Ambiente com porta 5432 ocupada e comando compose sem `PG_PORT` tentou recriar postgres em 5432; também foi necessário validar que comandos com profile/dependência funcionavam no contexto real | Subi com `WSLENV=PG_PORT PG_PORT=5433`, validei `docker compose --profile apps run --rm --build app` e `docker compose run --rm --build testes` com saídas reais |
+| 5 | Executar C7 (README/IA) | Documentação README/atividades | Atualização de instruções de execução, decisões de JDBC, saída do app e registro de Uso de IA | Risco de documentação incompleta/falsa (inventar tempos, omitir erros reais ou deixar README sem comandos reproduzíveis) | Registrei apenas saídas/comandos executados, incluí erros reais com correção e mantive `decisions.md` sem edição |
+
+**Reflexão:** a IA acelerou a escrita de scripts, testes e documentação, mas os erros mais úteis apareceram na execução real: line ending do init, dados inválidos no teste manual, restrição de `CURRENT_TIMESTAMP` na mesma transação e conflito de porta no ambiente. O fluxo confiável foi: ler `decisions.md/AGENTS/atividades`, implementar, executar no Docker, corrigir o erro observado e registrar a saída real.
+
 ## Documentos de trabalho
 
 - [`config.md`](config.md) — o que precisa estar instalado no computador para rodar o projeto (Docker, Git, portas, recursos).
@@ -319,5 +599,5 @@ Erro real encontrado e corrigido: `lpad(g::text, 4, '0')` truncava `10000` para 
 
 1. Frente A (concluída): DER, DDL, seed, subida limpa, testes de constraints e documentação de modelagem.
 2. Frente B (concluída): consultas, resultados esperados, testes JUnit, índices e `EXPLAIN` antes/depois documentado (B1–B6).
-3. Frente C: procedures/triggers, app Java e suíte JUnit.
+3. Frente C (concluída): procedures (C1), triggers (C2), testes manuais de lógica (C3), testes JUnit de procedures/triggers/concorrência (C4), aplicação Java (C5), Docker da aplicação/testes (C6) e README/IA da aplicação (C7).
 4. Frente D: README final, log de IA, tag, zip e apresentação.

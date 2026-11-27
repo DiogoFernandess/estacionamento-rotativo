@@ -40,5 +40,18 @@ services:
       - ./app:/app
       - ./postgresql:/scripts/postgresql:ro
 
+  app:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/estacionamento
+      DB_USER: estacionamento
+      DB_PASSWORD: estacionamento_pwd
+
 volumes:
   pg_dados:
